@@ -1,0 +1,28 @@
+{
+  "name": "QQ's Sweet Dreams",
+  "short_name": "QQ Dreams",
+  "description": "Aplicación de marcador para la competición QQ's Sweet Dreams",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "portrait",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["games", "sports"],
+  "lang": "es",
+  "dir": "ltr"
+}
