@@ -1,33 +1,53 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Optimización de imágenes
   images: { 
     unoptimized: true,
     formats: ['image/webp', 'image/avif'],
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
   },
+  
+  // Configuración de build
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
   
-  // Performance optimizations
-  experimental: {
-    optimizeCss: true,
-    optimizePackageImports: ['lucide-react'],
-  },
-  
-  // Compression and optimization
+  // Optimizaciones de rendimiento
+  swcMinify: true,
   compress: true,
   poweredByHeader: false,
   
-  // Bundle analyzer for production builds
+  // Configuración experimental para mejor rendimiento
+  experimental: {
+    optimizePackageImports: ['lucide-react'],
+    webVitalsAttribution: ['CLS', 'LCP'],
+  },
+  
+  // Configuración de webpack para optimización
   webpack: (config, { dev, isServer }) => {
-    // Optimize bundle size
+    // Optimizar bundle size en producción
     if (!dev && !isServer) {
       config.optimization.splitChunks = {
         chunks: 'all',
+        minSize: 20000,
+        maxSize: 244000,
         cacheGroups: {
+          default: {
+            minChunks: 2,
+            priority: -20,
+            reuseExistingChunk: true,
+          },
           vendor: {
             test: /[\\/]node_modules[\\/]/,
             name: 'vendors',
+            priority: -10,
             chunks: 'all',
+          },
+          common: {
+            name: 'common',
+            minChunks: 2,
+            chunks: 'all',
+            enforce: true,
           },
         },
       }
@@ -36,12 +56,16 @@ const nextConfig = {
     return config
   },
   
-  // Headers for better caching
+  // Headers para mejor rendimiento y seguridad
   async headers() {
     return [
       {
         source: '/(.*)',
         headers: [
+          {
+            key: 'X-DNS-Prefetch-Control',
+            value: 'on'
+          },
           {
             key: 'X-Content-Type-Options',
             value: 'nosniff',
@@ -54,16 +78,26 @@ const nextConfig = {
             key: 'X-XSS-Protection',
             value: '1; mode=block',
           },
-        ],
-      },
-      {
-        source: '/static/(.*)',
-        headers: [
           {
-            key: 'Cache-Control',
-            value: 'public, max-age=31536000, immutable',
+            key: 'Referrer-Policy',
+            value: 'origin-when-cross-origin',
+          },
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=()',
           },
         ],
+      },
+    ]
+  },
+  
+  // Redirects para SEO
+  async redirects() {
+    return [
+      {
+        source: '/home',
+        destination: '/',
+        permanent: true,
       },
     ]
   },

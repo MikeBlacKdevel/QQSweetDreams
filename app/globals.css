@@ -3,14 +3,24 @@
 @tailwind utilities;
 
 /* ============================================================================
- MODERN FLAT DESIGN SYSTEM WITH DARK MODE - OPTIMIZED
+ MODERN FLAT DESIGN SYSTEM WITH DARK MODE - OPTIMIZED FOR PERFORMANCE
  ============================================================================ */
+
+/* CSS Variables for better performance */
+:root {
+  --color-primary: #3b82f6;
+  --color-primary-dark: #1d4ed8;
+  --color-gray-50: #f9fafb;
+  --color-gray-900: #111827;
+  --transition-fast: 150ms;
+  --transition-normal: 200ms;
+  --border-radius: 0.5rem;
+}
 
 * {
   box-sizing: border-box;
   padding: 0;
   margin: 0;
-  -webkit-tap-highlight-color: transparent;
 }
 
 html {
@@ -19,6 +29,7 @@ html {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 html,
@@ -26,19 +37,19 @@ body {
   max-width: 100vw;
   overflow-x: hidden;
   font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  background: #f9fafb;
-  color: #111827;
-  transition: background-color 0.3s ease, color 0.3s ease;
+  background: var(--color-gray-50);
+  color: var(--color-gray-900);
+  transition: background-color var(--transition-normal) ease, color var(--transition-normal) ease;
 }
 
-/* Enhanced dark mode background */
+/* Enhanced dark mode background with better performance */
 html.dark,
 html.dark body {
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
-  color: #f9fafb;
+  color: var(--color-gray-50);
 }
 
-/* Add subtle texture overlay for dark mode */
+/* Optimized dark mode overlay */
 html.dark body::before {
   content: "";
   position: fixed;
@@ -46,16 +57,41 @@ html.dark body::before {
   left: 0;
   width: 100%;
   height: 100%;
-  background-image: radial-gradient(circle at 25% 25%, rgba(59, 130, 246, 0.02) 0%, transparent 50%),
+  background: radial-gradient(circle at 25% 25%, rgba(59, 130, 246, 0.02) 0%, transparent 50%),
     radial-gradient(circle at 75% 75%, rgba(147, 197, 253, 0.02) 0%, transparent 50%);
   pointer-events: none;
   z-index: 0;
+  will-change: transform;
 }
 
 body {
   min-height: 100vh;
   min-height: 100dvh;
   position: relative;
+}
+
+/* ============================================================================
+ PERFORMANCE OPTIMIZATIONS
+ ============================================================================ */
+
+/* Reduce layout shifts */
+img,
+video,
+iframe {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Optimize font loading */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.woff2")
+    format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 /* ============================================================================
@@ -103,7 +139,7 @@ body {
 }
 
 /* ============================================================================
- ANIMATED PARTICLES BACKGROUND - OPTIMIZED & REDUCED
+ OPTIMIZED ANIMATED PARTICLES BACKGROUND
  ============================================================================ */
 
 .particles-container {
@@ -115,6 +151,7 @@ body {
   pointer-events: none;
   z-index: 1;
   overflow: hidden;
+  contain: layout style paint;
 }
 
 .particle {
@@ -123,6 +160,7 @@ body {
   animation: float 20s infinite linear;
   filter: blur(0.5px);
   will-change: transform;
+  contain: layout style paint;
 }
 
 /* Light mode particles - subtle gray */
@@ -143,7 +181,7 @@ html.dark .particle {
   box-shadow: 0 0 4px rgba(59, 130, 246, 0.2), 0 0 8px rgba(59, 130, 246, 0.05);
 }
 
-/* Reduced particle variations for better performance */
+/* Optimized particle variations */
 .particle:nth-child(1) {
   width: 2px;
   height: 2px;
@@ -193,10 +231,10 @@ html.dark .particle {
 }
 
 /* ============================================================================
- MOBILE-OPTIMIZED COMPONENTS
+ OPTIMIZED COMPONENTS
  ============================================================================ */
 
-/* Enhanced button styles for mobile */
+/* Enhanced button styles */
 .btn-primary {
   @apply inline-flex items-center justify-center px-4 py-3 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 min-h-[44px];
 }
@@ -205,7 +243,7 @@ html.dark .particle {
   @apply inline-flex items-center justify-center px-4 py-3 border border-gray-300 dark:border-gray-500 text-sm font-medium rounded-lg text-gray-700 dark:text-gray-100 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 min-h-[44px];
 }
 
-/* Mobile-optimized cards */
+/* Optimized cards */
 .card {
   @apply bg-white dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 transition-all duration-200;
 }
@@ -214,6 +252,7 @@ html.dark .particle {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
+  contain: layout style paint;
 }
 
 .card-glow:hover {
@@ -225,7 +264,7 @@ html.dark .card-glow:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 20px rgba(59, 130, 246, 0.2);
 }
 
-/* Enhanced input styles for mobile */
+/* Enhanced input styles */
 .input-glow {
   @apply w-full px-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-50 placeholder-gray-500 dark:placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 min-h-[44px];
 }
@@ -235,9 +274,10 @@ html.dark .card-glow:hover {
   transform: scale(1.01);
 }
 
-/* Mobile-optimized modal */
+/* Optimized modal */
 .modal-glow {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1), 0 0 40px rgba(59, 130, 246, 0.05);
+  contain: layout style paint;
 }
 
 html.dark .modal-glow {
@@ -269,7 +309,7 @@ html.dark .modal-glow {
 }
 
 /* ============================================================================
- RESPONSIVE UTILITIES
+ ACCESSIBILITY AND PERFORMANCE OPTIMIZATIONS
  ============================================================================ */
 
 /* Safe area insets for mobile devices */
@@ -291,7 +331,7 @@ html.dark .modal-glow {
   }
 }
 
-/* Scrollbar styling for mobile */
+/* Optimized scrollbar styling */
 ::-webkit-scrollbar {
   width: 4px;
 }
@@ -340,7 +380,7 @@ html.dark ::-webkit-scrollbar-thumb {
 * {
   transition-property: background-color, border-color, color, fill, stroke;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  transition-duration: 200ms;
+  transition-duration: var(--transition-normal);
 }
 
 /* Selection colors */
@@ -373,5 +413,18 @@ html.dark ::selection {
 
   .particle {
     display: none;
+  }
+}
+
+/* Print styles */
+@media print {
+  .particles-container,
+  .particle {
+    display: none;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
   }
 }

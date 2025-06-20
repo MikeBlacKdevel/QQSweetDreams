@@ -41,6 +41,7 @@ const adminItems = [
   { id: "add-user", label: "Agregar Usuario", icon: Plus },
   { id: "add-award", label: "Agregar Premio", icon: Award },
   { id: "add-hour", label: "Agregar Hora", icon: Clock },
+  { id: "adjust-points", label: "Ajustar Puntos", icon: Settings, color: "text-blue-700 dark:text-blue-400" },
   { id: "qq-mejor-award", label: "Premio QQ Mejor", icon: Heart, color: "text-green-700 dark:text-green-400" },
   {
     id: "penalization-award",
@@ -143,7 +144,10 @@ export default function Sidebar({
                   return (
                     <button
                       key={item.id}
-                      onClick={() => handleItemClick(item.id, true)}
+                      onClick={() => {
+                        console.log(`Admin button clicked: ${item.id}`) // Debug log
+                        handleItemClick(item.id, true)
+                      }}
                       className={`w-full flex items-center px-3 py-2.5 sm:py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
                         item.color || "text-gray-700 dark:text-gray-200"
                       } hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800`}

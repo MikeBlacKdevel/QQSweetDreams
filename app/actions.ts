@@ -592,3 +592,137 @@ export async function getPenalizationsDetailed() {
     return []
   }
 }
+
+// ============================================================================
+// FUNCIONES PARA GESTIÓN DIRECTA DE PUNTOS
+// ============================================================================
+
+export async function adjustUserPoints(formData: FormData) {
+  try {
+    await ensureTablesExist()
+
+    const userId = Number.parseInt(formData.get("userId") as string)
+    const pointsAdjustment = Number.parseInt(formData.get("pointsAdjustment") as string) || 0
+    const reason = formData.get("reason") as string
+    const adminName = formData.get("adminName") as string
+    const adjustmentType = formData.get("adjustmentType") as string // 'add' or 'subtract' or 'set'
+
+    if (!userId || pointsAdjustment === 0 || !reason.trim() || !adminName.trim()) {
+      throw new Error("Usuario, puntos, razón y administrador son requeridos")
+    }
+
+    // Crear tabla para historial de ajustes de puntos si no existe
+    await sql`
+      CREATE TABLE IF NOT EXISTS points_adjustments (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        points_before INTEGER NOT NULL,
+        points_adjustment INTEGER NOT NULL,
+        points_after INTEGER NOT NULL,
+        adjustment_type VARCHAR(20) NOT NULL,
+        reason TEXT NOT NULL,
+        admin_name VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `
+
+    // Obtener puntos actuales del usuario
+    const userResult = await sql`
+      SELECT points FROM users WHERE id = ${userId}
+    `
+
+    if (userResult.length === 0) {
+      throw new Error("Usuario no encontrado")
+    }
+
+    const currentPoints = userResult[0].points
+    let newPoints = currentPoints
+
+    // Calcular nuevos puntos según el tipo de ajuste
+    switch (adjustmentType) {
+      case "add":
+        newPoints = currentPoints + pointsAdjustment
+        break
+      case "subtract":
+        newPoints = currentPoints - pointsAdjustment
+        break
+      case "set":
+        newPoints = pointsAdjustment
+        break
+      default:
+        throw new Error("Tipo de ajuste no válido")
+    }
+
+    // Asegurar que los puntos no sean negativos
+    if (newPoints < 0) {
+      newPoints = 0
+    }
+
+    // Actualizar puntos del usuario
+    await sql`
+      UPDATE users 
+      SET points = ${newPoints},
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${userId}
+    `
+
+    // Registrar el ajuste en el historial
+    await sql`
+      INSERT INTO points_adjustments (user_id, points_before, points_adjustment, points_after, adjustment_type, reason, admin_name)
+      VALUES (${userId}, ${currentPoints}, ${pointsAdjustment}, ${newPoints}, ${adjustmentType}, ${reason}, ${adminName})
+    `
+
+    revalidatePath("/")
+    return { success: true }
+  } catch (error) {
+    console.error("Error adjusting user points:", error)
+    return { success: false, error: "Error al ajustar puntos del usuario" }
+  }
+}
+
+export async function getPointsAdjustmentsHistory() {
+  try {
+    await ensureTablesExist()
+
+    // Crear la tabla si no existe
+    await sql`
+      CREATE TABLE IF NOT EXISTS points_adjustments (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        points_before INTEGER NOT NULL,
+        points_adjustment INTEGER NOT NULL,
+        points_after INTEGER NOT NULL,
+        adjustment_type VARCHAR(20) NOT NULL,
+        reason TEXT NOT NULL,
+        admin_name VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `
+
+    const adjustments = await sql`
+      SELECT 
+        pa.id,
+        pa.user_id,
+        pa.points_before,
+        pa.points_adjustment,
+        pa.points_after,
+        pa.adjustment_type,
+        pa.reason,
+        pa.admin_name,
+        pa.created_at,
+        u.name as user_name
+      FROM points_adjustments pa
+      JOIN users u ON pa.user_id = u.id
+      ORDER BY pa.created_at DESC
+      LIMIT 50
+    `
+
+    return adjustments.map((adjustment) => ({
+      ...adjustment,
+      created_at: adjustment.created_at ? adjustment.created_at.toISOString() : new Date().toISOString(),
+    }))
+  } catch (error) {
+    console.error("Error getting points adjustments history:", error)
+    return []
+  }
+}

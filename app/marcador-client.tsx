@@ -37,6 +37,7 @@ export default function MarcadorClient({
   initialBets,
   initialQQMejorAwards,
   initialPenalizations,
+  initialPointsAdjustments,
 }: Props) {
   // ============================================================================
   // HOOKS Y ESTADO PRINCIPAL
@@ -45,6 +46,7 @@ export default function MarcadorClient({
   const [bets, setBets] = useState(initialBets)
   const [qqMejorAwards, setQQMejorAwards] = useState(initialQQMejorAwards)
   const [penalizations, setPenalizations] = useState(initialPenalizations)
+  const [pointsAdjustments, setPointsAdjustments] = useState(initialPointsAdjustments)
   const [isPending, startTransition] = useTransition()
   const [isMobile, setIsMobile] = useState(false)
 
@@ -69,6 +71,7 @@ export default function MarcadorClient({
     rivals: false,
     qqMejorAward: false,
     penalizationAward: false,
+    adjustPoints: false,
     howItWorks: false,
     rules: false,
     qqMejor: false,
@@ -112,6 +115,12 @@ export default function MarcadorClient({
     penalizationDescription: "",
     penalizationPoints: 0,
     penalizationAdminName: "",
+    // Points adjustment form
+    adjustPointsUserId: "",
+    adjustPointsAmount: 0,
+    adjustPointsType: "add", // 'add', 'subtract', 'set'
+    adjustPointsReason: "",
+    adjustPointsAdminName: "",
   })
 
   // ============================================================================
@@ -150,7 +159,6 @@ export default function MarcadorClient({
       userTrophies: 0,
       userGoldMedals: 0,
       userSilverMedals: 0,
-      userBronzeMedals: 0,
       userPoints: 0,
       copaUserId: "",
       copaTipo: AWARD_TYPES.COPA,
@@ -170,6 +178,11 @@ export default function MarcadorClient({
       penalizationDescription: "",
       penalizationPoints: 0,
       penalizationAdminName: "",
+      adjustPointsUserId: "",
+      adjustPointsAmount: 0,
+      adjustPointsType: "add",
+      adjustPointsReason: "",
+      adjustPointsAdminName: "",
     })
   }, [])
 
@@ -203,6 +216,7 @@ export default function MarcadorClient({
         "add-user": "addUser",
         "add-award": "addAward",
         "add-hour": "addHour",
+        "adjust-points": "adjustPoints",
         "qq-mejor-award": "qqMejorAward",
         "penalization-award": "penalizationAward",
         "manage-bets": "manageBets",
@@ -215,6 +229,7 @@ export default function MarcadorClient({
       }
 
       const modalKey = modalMappings[modalName] || modalName
+      console.log(`Opening modal: ${modalName} -> ${modalKey}`) // Debug log
       openModal(modalKey)
     },
     [openModal],
@@ -276,6 +291,252 @@ export default function MarcadorClient({
 
       startTransition(async () => {
         const result = await deleteUser(id)
+        if (result.success) {
+          window.location.reload()
+        } else {
+          alert(result.error)
+        }
+      })
+    },
+    [startTransition],
+  )
+
+  const handleAdjustPoints = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault()
+      if (!formData.adjustPointsUserId || !formData.adjustPointsReason.trim() || !formData.adjustPointsAdminName.trim())
+        return
+
+      const data = new FormData()
+      data.append("userId", formData.adjustPointsUserId)
+      data.append("pointsAdjustment", formData.adjustPointsAmount.toString())
+      data.append("adjustmentType", formData.adjustPointsType)
+      data.append("reason", formData.adjustPointsReason.trim())
+      data.append("adminName", formData.adjustPointsAdminName.trim())
+
+      startTransition(async () => {
+        const { adjustUserPoints } = await import("./actions")
+        const result = await adjustUserPoints(data)
+        if (result.success) {
+          resetFormData()
+          closeModal("adjustPoints")
+          window.location.reload()
+        } else {
+          alert(result.error)
+        }
+      })
+    },
+    [formData, resetFormData, closeModal, startTransition],
+  )
+
+  const handleAddBet = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault()
+      if (!formData.bettorName.trim() || !formData.predictedWinner.trim()) return
+
+      const data = new FormData()
+      data.append("bettorName", formData.bettorName.trim())
+      data.append("predictedWinner", formData.predictedWinner.trim())
+
+      startTransition(async () => {
+        const { addBet } = await import("./actions")
+        const result = await addBet(data)
+        if (result.success) {
+          resetFormData()
+          closeModal("bet")
+          window.location.reload()
+        } else {
+          alert(result.error)
+        }
+      })
+    },
+    [formData, resetFormData, closeModal, startTransition],
+  )
+
+  const handleAddRivals = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault()
+      if (!formData.rivalsBettorName.trim() || !formData.rivalsTarget.trim()) return
+
+      const data = new FormData()
+      data.append("bettorName", formData.rivalsBettorName.trim())
+      data.append("predictedWinner", `RIVALS: ${formData.rivalsTarget.trim()}`)
+
+      startTransition(async () => {
+        const { addBet } = await import("./actions")
+        const result = await addBet(data)
+        if (result.success) {
+          resetFormData()
+          closeModal("rivals")
+          window.location.reload()
+        } else {
+          alert(result.error)
+        }
+      })
+    },
+    [formData, resetFormData, closeModal, startTransition],
+  )
+
+  const handleAddQQMejor = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault()
+      if (!formData.qqMejorUserId || !formData.qqMejorDescription.trim() || formData.qqMejorPoints <= 0) return
+
+      const data = new FormData()
+      data.append("userId", formData.qqMejorUserId)
+      data.append("description", formData.qqMejorDescription.trim())
+      data.append("points", formData.qqMejorPoints.toString())
+
+      startTransition(async () => {
+        const { addQQMejorAwardWithDescription } = await import("./actions")
+        const result = await addQQMejorAwardWithDescription(data)
+        if (result.success) {
+          resetFormData()
+          closeModal("qqMejorAward")
+          window.location.reload()
+        } else {
+          alert(result.error)
+        }
+      })
+    },
+    [formData, resetFormData, closeModal, startTransition],
+  )
+
+  const handleAddPenalization = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault()
+      if (
+        !formData.penalizationUserId ||
+        !formData.penalizationDescription.trim() ||
+        formData.penalizationPoints <= 0 ||
+        !formData.penalizationAdminName.trim()
+      )
+        return
+
+      const data = new FormData()
+      data.append("userId", formData.penalizationUserId)
+      data.append("description", formData.penalizationDescription.trim())
+      data.append("points", formData.penalizationPoints.toString())
+      data.append("adminName", formData.penalizationAdminName.trim())
+
+      startTransition(async () => {
+        const { addPenalizationWithDescription } = await import("./actions")
+        const result = await addPenalizationWithDescription(data)
+        if (result.success) {
+          resetFormData()
+          closeModal("penalizationAward")
+          window.location.reload()
+        } else {
+          alert(result.error)
+        }
+      })
+    },
+    [formData, resetFormData, closeModal, startTransition],
+  )
+
+  const handleAddAward = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault()
+      if (!formData.copaUserId || !formData.copaTipo || !formData.copaHora) return
+
+      const data = new FormData()
+      data.append("userId", formData.copaUserId)
+      data.append("awardType", formData.copaTipo)
+      data.append("hourTime", formData.copaHora)
+
+      startTransition(async () => {
+        const { addAward } = await import("./actions")
+        const result = await addAward(data)
+        if (result.success) {
+          resetFormData()
+          closeModal("addAward")
+          window.location.reload()
+        } else {
+          alert(result.error)
+        }
+      })
+    },
+    [formData, resetFormData, closeModal, startTransition],
+  )
+
+  const handleAddHour = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault()
+      if (!formData.horaUserId || !formData.horaValue) return
+
+      const data = new FormData()
+      data.append("userId", formData.horaUserId)
+      data.append("hourTime", formData.horaValue)
+
+      startTransition(async () => {
+        const { addHour } = await import("./actions")
+        const result = await addHour(data)
+        if (result.success) {
+          resetFormData()
+          closeModal("addHour")
+          window.location.reload()
+        } else {
+          alert(result.error)
+        }
+      })
+    },
+    [formData, resetFormData, closeModal, startTransition],
+  )
+
+  const handleEditBet = useCallback(
+    (bet: Bet) => {
+      setEditingBet(bet)
+      updateFormData({
+        bettorName: bet.bettor_name,
+        predictedWinner: bet.predicted_winner.replace("RIVALS: ", ""),
+        betStatus: bet.status,
+        betPoints: bet.points_awarded,
+      })
+      openModal("manageBets")
+    },
+    [updateFormData, openModal],
+  )
+
+  const handleUpdateBet = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault()
+      if (!editingBet || !formData.bettorName.trim() || !formData.predictedWinner.trim()) return
+
+      const data = new FormData()
+      data.append("id", editingBet.id.toString())
+      data.append("bettorName", formData.bettorName.trim())
+      data.append(
+        "predictedWinner",
+        editingBet.predicted_winner.startsWith("RIVALS:")
+          ? `RIVALS: ${formData.predictedWinner.trim()}`
+          : formData.predictedWinner.trim(),
+      )
+      data.append("status", formData.betStatus)
+      data.append("pointsAwarded", formData.betPoints.toString())
+
+      startTransition(async () => {
+        const { updateBet } = await import("./actions")
+        const result = await updateBet(data)
+        if (result.success) {
+          resetFormData()
+          setEditingBet(null)
+          closeModal("manageBets")
+          window.location.reload()
+        } else {
+          alert(result.error)
+        }
+      })
+    },
+    [editingBet, formData, resetFormData, closeModal, startTransition],
+  )
+
+  const handleDeleteBet = useCallback(
+    async (id: number) => {
+      if (!confirm("¿Estás seguro de que quieres eliminar esta apuesta?")) return
+
+      startTransition(async () => {
+        const { deleteBet } = await import("./actions")
+        const result = await deleteBet(id)
         if (result.success) {
           window.location.reload()
         } else {
@@ -598,6 +859,926 @@ export default function MarcadorClient({
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal Ajustar Puntos */}
+      <Modal
+        isOpen={modals.adjustPoints}
+        onClose={() => {
+          resetFormData()
+          closeModal("adjustPoints")
+        }}
+        title="Ajustar Puntos de Usuario"
+        maxWidth="xl"
+      >
+        <form onSubmit={handleAdjustPoints} className="space-y-6">
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-2">ℹ️ Información</h4>
+            <p className="text-xs text-blue-800 dark:text-blue-200">
+              Este sistema permite ajustar los puntos directamente sin afectar las copas, medallas u otros premios del
+              usuario.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Usuario</label>
+            <select
+              value={formData.adjustPointsUserId}
+              onChange={(e) => updateFormData({ adjustPointsUserId: (e.target as HTMLSelectElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              required
+              disabled={isPending}
+            >
+              <option value="">Seleccionar usuario</option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name} (Puntos actuales: {user.points})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Tipo de Ajuste</label>
+            <select
+              value={formData.adjustPointsType}
+              onChange={(e) => updateFormData({ adjustPointsType: (e.target as HTMLSelectElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              required
+              disabled={isPending}
+            >
+              <option value="add">Añadir puntos</option>
+              <option value="subtract">Restar puntos</option>
+              <option value="set">Establecer puntos exactos</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+              {formData.adjustPointsType === "set" ? "Puntos finales" : "Cantidad de puntos"}
+            </label>
+            <input
+              type="number"
+              value={formData.adjustPointsAmount}
+              onChange={(e) =>
+                updateFormData({ adjustPointsAmount: Number((e.target as HTMLInputElement).value) || 0 })
+              }
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              min="0"
+              required
+              disabled={isPending}
+              placeholder={formData.adjustPointsType === "set" ? "Ej: 100" : "Ej: 25"}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Razón del Ajuste</label>
+            <textarea
+              value={formData.adjustPointsReason}
+              onChange={(e) => updateFormData({ adjustPointsReason: (e.target as HTMLTextAreaElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              rows={3}
+              required
+              disabled={isPending}
+              placeholder="Explica por qué se está ajustando los puntos..."
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Administrador</label>
+            <input
+              type="text"
+              value={formData.adjustPointsAdminName}
+              onChange={(e) => updateFormData({ adjustPointsAdminName: (e.target as HTMLInputElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              required
+              disabled={isPending}
+              placeholder="Tu nombre como administrador"
+            />
+          </div>
+
+          {/* Vista previa del cambio */}
+          {formData.adjustPointsUserId && formData.adjustPointsAmount > 0 && (
+            <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+              <h5 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">Vista Previa del Cambio:</h5>
+              {(() => {
+                const selectedUser = users.find((u) => u.id === Number(formData.adjustPointsUserId))
+                if (!selectedUser) return null
+
+                let newPoints = selectedUser.points
+                switch (formData.adjustPointsType) {
+                  case "add":
+                    newPoints = selectedUser.points + formData.adjustPointsAmount
+                    break
+                  case "subtract":
+                    newPoints = Math.max(0, selectedUser.points - formData.adjustPointsAmount)
+                    break
+                  case "set":
+                    newPoints = formData.adjustPointsAmount
+                    break
+                }
+
+                return (
+                  <div className="text-sm text-gray-700 dark:text-gray-300">
+                    <span className="font-medium">{selectedUser.name}</span>: {selectedUser.points} → {newPoints} puntos
+                    {formData.adjustPointsType === "subtract" &&
+                      newPoints === 0 &&
+                      selectedUser.points > formData.adjustPointsAmount && (
+                        <div className="text-yellow-600 dark:text-yellow-400 text-xs mt-1">
+                          ⚠️ Los puntos no pueden ser negativos, se establecerán en 0
+                        </div>
+                      )}
+                  </div>
+                )
+              })()}
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-4">
+            <button
+              type="submit"
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 btn-glow"
+              disabled={isPending}
+            >
+              Ajustar Puntos
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                resetFormData()
+                closeModal("adjustPoints")
+              }}
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-gray-300 dark:border-gray-700 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isPending}
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
+
+        {/* Historial de ajustes recientes */}
+        {pointsAdjustments.length > 0 && (
+          <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+            <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">Ajustes Recientes</h4>
+            <div className="max-h-60 overflow-y-auto space-y-3">
+              {pointsAdjustments.slice(0, 10).map((adjustment) => (
+                <div key={adjustment.id} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 text-sm">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-medium text-gray-900 dark:text-gray-100">{adjustment.user_name}</span>
+                    <span
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        adjustment.adjustment_type === "add"
+                          ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                          : adjustment.adjustment_type === "subtract"
+                            ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                            : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+                      }`}
+                    >
+                      {adjustment.adjustment_type === "add" && "+"}
+                      {adjustment.adjustment_type === "subtract" && "-"}
+                      {adjustment.adjustment_type === "set" && "="}
+                      {adjustment.points_adjustment}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">
+                    {adjustment.points_before} → {adjustment.points_after} pts
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-500">
+                    {adjustment.reason} • {adjustment.admin_name}
+                  </div>
+                  <div className="text-xs text-gray-400 dark:text-gray-600">
+                    {new Date(adjustment.created_at).toLocaleDateString("es-ES", {
+                      day: "numeric",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal Agregar Apuesta */}
+      <Modal
+        isOpen={modals.bet}
+        onClose={() => {
+          resetFormData()
+          closeModal("bet")
+        }}
+        title="Nueva Apuesta"
+      >
+        <form onSubmit={handleAddBet} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Tu Nombre</label>
+            <input
+              type="text"
+              value={formData.bettorName}
+              onChange={(e) => updateFormData({ bettorName: (e.target as HTMLInputElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              required
+              disabled={isPending}
+              placeholder="Tu nombre"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Ganador Predicho</label>
+            <select
+              value={formData.predictedWinner}
+              onChange={(e) => updateFormData({ predictedWinner: (e.target as HTMLSelectElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              required
+              disabled={isPending}
+            >
+              <option value="">Seleccionar ganador</option>
+              {users.map((user) => (
+                <option key={user.id} value={user.name}>
+                  {user.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-3 pt-4">
+            <button
+              type="submit"
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 btn-glow"
+              disabled={isPending}
+            >
+              Apostar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                resetFormData()
+                closeModal("bet")
+              }}
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-gray-300 dark:border-gray-700 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isPending}
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal RIVALS */}
+      <Modal
+        isOpen={modals.rivals}
+        onClose={() => {
+          resetFormData()
+          closeModal("rivals")
+        }}
+        title="Nueva Apuesta RIVALS"
+      >
+        <form onSubmit={handleAddRivals} className="space-y-4">
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+            <p className="text-sm text-red-800 dark:text-red-200">
+              <strong>RIVALS:</strong> Apuesta contra quien crees que NO ganará la copa o medalla de oro.
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Tu Nombre</label>
+            <input
+              type="text"
+              value={formData.rivalsBettorName}
+              onChange={(e) => updateFormData({ rivalsBettorName: (e.target as HTMLInputElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              required
+              disabled={isPending}
+              placeholder="Tu nombre"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Apostar CONTRA</label>
+            <select
+              value={formData.rivalsTarget}
+              onChange={(e) => updateFormData({ rivalsTarget: (e.target as HTMLSelectElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              required
+              disabled={isPending}
+            >
+              <option value="">Seleccionar rival</option>
+              {users
+                .filter((user) => getTotalPoints(user) > 0)
+                .map((user) => (
+                  <option key={user.id} value={user.name}>
+                    {user.name} ({getTotalPoints(user)} pts)
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div className="flex gap-3 pt-4">
+            <button
+              type="submit"
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 btn-glow"
+              disabled={isPending}
+            >
+              RIVALS
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                resetFormData()
+                closeModal("rivals")
+              }}
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-gray-300 dark:border-gray-700 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isPending}
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal QQ Mejor Award */}
+      <Modal
+        isOpen={modals.qqMejorAward}
+        onClose={() => {
+          resetFormData()
+          closeModal("qqMejorAward")
+        }}
+        title="Otorgar Premio QQ Mejor"
+      >
+        <form onSubmit={handleAddQQMejor} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Usuario</label>
+            <select
+              value={formData.qqMejorUserId}
+              onChange={(e) => updateFormData({ qqMejorUserId: (e.target as HTMLSelectElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              required
+              disabled={isPending}
+            >
+              <option value="">Seleccionar usuario</option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Descripción</label>
+            <textarea
+              value={formData.qqMejorDescription}
+              onChange={(e) => updateFormData({ qqMejorDescription: (e.target as HTMLTextAreaElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              rows={3}
+              required
+              disabled={isPending}
+              placeholder="Describe la buena acción..."
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Puntos</label>
+            <input
+              type="number"
+              value={formData.qqMejorPoints}
+              onChange={(e) => updateFormData({ qqMejorPoints: Number((e.target as HTMLInputElement).value) || 0 })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              min="1"
+              max="50"
+              required
+              disabled={isPending}
+              placeholder="5-50 puntos"
+            />
+          </div>
+          <div className="flex gap-3 pt-4">
+            <button
+              type="submit"
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 btn-glow"
+              disabled={isPending}
+            >
+              Otorgar Premio
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                resetFormData()
+                closeModal("qqMejorAward")
+              }}
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-gray-300 dark:border-gray-700 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isPending}
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Penalización */}
+      <Modal
+        isOpen={modals.penalizationAward}
+        onClose={() => {
+          resetFormData()
+          closeModal("penalizationAward")
+        }}
+        title="Aplicar Penalización"
+      >
+        <form onSubmit={handleAddPenalization} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Usuario</label>
+            <select
+              value={formData.penalizationUserId}
+              onChange={(e) => updateFormData({ penalizationUserId: (e.target as HTMLSelectElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              required
+              disabled={isPending}
+            >
+              <option value="">Seleccionar usuario</option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Descripción</label>
+            <textarea
+              value={formData.penalizationDescription}
+              onChange={(e) => updateFormData({ penalizationDescription: (e.target as HTMLTextAreaElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              rows={3}
+              required
+              disabled={isPending}
+              placeholder="Describe el comportamiento penalizable..."
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Puntos a Restar</label>
+            <input
+              type="number"
+              value={formData.penalizationPoints}
+              onChange={(e) =>
+                updateFormData({ penalizationPoints: Number((e.target as HTMLInputElement).value) || 0 })
+              }
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              min="1"
+              max="50"
+              required
+              disabled={isPending}
+              placeholder="5-50 puntos"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Administrador</label>
+            <input
+              type="text"
+              value={formData.penalizationAdminName}
+              onChange={(e) => updateFormData({ penalizationAdminName: (e.target as HTMLInputElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              required
+              disabled={isPending}
+              placeholder="Tu nombre como administrador"
+            />
+          </div>
+          <div className="flex gap-3 pt-4">
+            <button
+              type="submit"
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 btn-glow"
+              disabled={isPending}
+            >
+              Aplicar Penalización
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                resetFormData()
+                closeModal("penalizationAward")
+              }}
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-gray-300 dark:border-gray-700 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isPending}
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Agregar Premio */}
+      <Modal
+        isOpen={modals.addAward}
+        onClose={() => {
+          resetFormData()
+          closeModal("addAward")
+        }}
+        title="Agregar Premio"
+      >
+        <form onSubmit={handleAddAward} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Usuario</label>
+            <select
+              value={formData.copaUserId}
+              onChange={(e) => updateFormData({ copaUserId: (e.target as HTMLSelectElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              required
+              disabled={isPending}
+            >
+              <option value="">Seleccionar usuario</option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Tipo de Premio</label>
+            <select
+              value={formData.copaTipo}
+              onChange={(e) => updateFormData({ copaTipo: (e.target as HTMLSelectElement).value as any })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              required
+              disabled={isPending}
+            >
+              <option value="copa">Copa (10 pts)</option>
+              <option value="oro">Oro (5 pts)</option>
+              <option value="plata">Plata (3 pts)</option>
+              <option value="bronce">Bronce (1 pt)</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Hora</label>
+            <input
+              type="time"
+              value={formData.copaHora}
+              onChange={(e) => updateFormData({ copaHora: (e.target as HTMLInputElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              required
+              disabled={isPending}
+            />
+          </div>
+          <div className="flex gap-3 pt-4">
+            <button
+              type="submit"
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 btn-glow"
+              disabled={isPending}
+            >
+              Agregar Premio
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                resetFormData()
+                closeModal("addAward")
+              }}
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-gray-300 dark:border-gray-700 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isPending}
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Agregar Hora */}
+      <Modal
+        isOpen={modals.addHour}
+        onClose={() => {
+          resetFormData()
+          closeModal("addHour")
+        }}
+        title="Agregar Hora"
+      >
+        <form onSubmit={handleAddHour} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Usuario</label>
+            <select
+              value={formData.horaUserId}
+              onChange={(e) => updateFormData({ horaUserId: (e.target as HTMLSelectElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              required
+              disabled={isPending}
+            >
+              <option value="">Seleccionar usuario</option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Hora</label>
+            <input
+              type="time"
+              value={formData.horaValue}
+              onChange={(e) => updateFormData({ horaValue: (e.target as HTMLInputElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              required
+              disabled={isPending}
+            />
+          </div>
+          <div className="flex gap-3 pt-4">
+            <button
+              type="submit"
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 btn-glow"
+              disabled={isPending}
+            >
+              Agregar Hora
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                resetFormData()
+                closeModal("addHour")
+              }}
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-gray-300 dark:border-gray-700 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isPending}
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Gestionar Apuestas */}
+      <Modal
+        isOpen={modals.manageBets}
+        onClose={() => {
+          setEditingBet(null)
+          resetFormData()
+          closeModal("manageBets")
+        }}
+        title="Gestionar Apuestas"
+        maxWidth="4xl"
+      >
+        <div className="space-y-6">
+          {editingBet ? (
+            <form onSubmit={handleUpdateBet} className="space-y-4">
+              <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Editar Apuesta</h4>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Apostador</label>
+                <input
+                  type="text"
+                  value={formData.bettorName}
+                  onChange={(e) => updateFormData({ bettorName: (e.target as HTMLInputElement).value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+                  required
+                  disabled={isPending}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Predicción</label>
+                <input
+                  type="text"
+                  value={formData.predictedWinner}
+                  onChange={(e) => updateFormData({ predictedWinner: (e.target as HTMLInputElement).value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+                  required
+                  disabled={isPending}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Estado</label>
+                <select
+                  value={formData.betStatus}
+                  onChange={(e) => updateFormData({ betStatus: (e.target as HTMLSelectElement).value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+                  required
+                  disabled={isPending}
+                >
+                  <option value="pending">Pendiente</option>
+                  <option value="won">Ganada</option>
+                  <option value="lost">Perdida</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                  Puntos Otorgados
+                </label>
+                <input
+                  type="number"
+                  value={formData.betPoints}
+                  onChange={(e) => updateFormData({ betPoints: Number((e.target as HTMLInputElement).value) || 0 })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+                  disabled={isPending}
+                />
+              </div>
+              <div className="flex gap-3">
+                <button
+                  type="submit"
+                  className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 btn-glow"
+                  disabled={isPending}
+                >
+                  Actualizar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingBet(null)
+                    resetFormData()
+                  }}
+                  className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-gray-300 dark:border-gray-700 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isPending}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div>
+              <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Todas las Apuestas</h4>
+              <div className="max-h-96 overflow-y-auto space-y-3">
+                {bets
+                  .filter((bet) => !bet.predicted_winner.startsWith("RIVALS:"))
+                  .map((bet) => (
+                    <div
+                      key={bet.id}
+                      className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-700"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="font-medium text-gray-900 dark:text-white">{bet.bettor_name}</span>
+                            <span className="text-gray-500">→</span>
+                            <span className="text-gray-600 dark:text-gray-400">{bet.predicted_winner}</span>
+                            <span
+                              className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                bet.status === "won"
+                                  ? "bg-green-100 text-green-800"
+                                  : bet.status === "lost"
+                                    ? "bg-red-100 text-red-800"
+                                    : "bg-yellow-100 text-yellow-800"
+                              }`}
+                            >
+                              {bet.status === "won" ? "Ganada" : bet.status === "lost" ? "Perdida" : "Pendiente"}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {new Date(bet.created_at).toLocaleDateString("es-ES")} • Puntos: {bet.points_awarded}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleEditBet(bet)}
+                            className="px-3 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-md transition-colors"
+                            disabled={isPending}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            onClick={() => handleDeleteBet(bet.id)}
+                            className="px-3 py-1 text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-100 rounded-md transition-colors"
+                            disabled={isPending}
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* Modal Gestionar RIVALS */}
+      <Modal
+        isOpen={modals.manageRivals}
+        onClose={() => {
+          setEditingBet(null)
+          resetFormData()
+          closeModal("manageRivals")
+        }}
+        title="Gestionar RIVALS"
+        maxWidth="4xl"
+      >
+        <div className="space-y-6">
+          {editingBet ? (
+            <form onSubmit={handleUpdateBet} className="space-y-4">
+              <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Editar RIVALS</h4>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Apostador</label>
+                <input
+                  type="text"
+                  value={formData.bettorName}
+                  onChange={(e) => updateFormData({ bettorName: (e.target as HTMLInputElement).value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+                  required
+                  disabled={isPending}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Rival</label>
+                <input
+                  type="text"
+                  value={formData.predictedWinner}
+                  onChange={(e) => updateFormData({ predictedWinner: (e.target as HTMLInputElement).value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+                  required
+                  disabled={isPending}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Estado</label>
+                <select
+                  value={formData.betStatus}
+                  onChange={(e) => updateFormData({ betStatus: (e.target as HTMLSelectElement).value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+                  required
+                  disabled={isPending}
+                >
+                  <option value="pending">Pendiente</option>
+                  <option value="won">Ganada</option>
+                  <option value="lost">Perdida</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                  Puntos Otorgados
+                </label>
+                <input
+                  type="number"
+                  value={formData.betPoints}
+                  onChange={(e) => updateFormData({ betPoints: Number((e.target as HTMLInputElement).value) || 0 })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+                  disabled={isPending}
+                />
+              </div>
+              <div className="flex gap-3">
+                <button
+                  type="submit"
+                  className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 btn-glow"
+                  disabled={isPending}
+                >
+                  Actualizar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingBet(null)
+                    resetFormData()
+                  }}
+                  className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-gray-300 dark:border-gray-700 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isPending}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div>
+              <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Todas las Apuestas RIVALS</h4>
+              <div className="max-h-96 overflow-y-auto space-y-3">
+                {bets
+                  .filter((bet) => bet.predicted_winner.startsWith("RIVALS:"))
+                  .map((bet) => (
+                    <div
+                      key={bet.id}
+                      className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="font-medium text-gray-900 dark:text-white">{bet.bettor_name}</span>
+                            <span className="text-red-600 font-bold">VS</span>
+                            <span className="text-gray-600 dark:text-gray-400">
+                              {bet.predicted_winner.replace("RIVALS: ", "")}
+                            </span>
+                            <span
+                              className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                bet.status === "won"
+                                  ? "bg-green-100 text-green-800"
+                                  : bet.status === "lost"
+                                    ? "bg-red-100 text-red-800"
+                                    : "bg-yellow-100 text-yellow-800"
+                              }`}
+                            >
+                              {bet.status === "won" ? "Ganada" : bet.status === "lost" ? "Perdida" : "Pendiente"}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {new Date(bet.created_at).toLocaleDateString("es-ES")} • Puntos: {bet.points_awarded}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleEditBet(bet)}
+                            className="px-3 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-md transition-colors"
+                            disabled={isPending}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            onClick={() => handleDeleteBet(bet.id)}
+                            className="px-3 py-1 text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-100 rounded-md transition-colors"
+                            disabled={isPending}
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </div>
       </Modal>
 
       {/* Modal ¿Cómo funciona? */}

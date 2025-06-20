@@ -39,11 +39,25 @@ export interface Penalization {
   created_at: string
 }
 
+export interface PointsAdjustment {
+  id: number
+  user_id: number
+  user_name: string
+  points_before: number
+  points_adjustment: number
+  points_after: number
+  adjustment_type: string
+  reason: string
+  admin_name: string
+  created_at: string
+}
+
 export interface Props {
   initialUsers: User[]
   initialBets: Bet[]
   initialQQMejorAwards: QQMejorAward[]
   initialPenalizations: Penalization[]
+  initialPointsAdjustments: PointsAdjustment[]
 }
 
 export const AWARD_TYPES = {

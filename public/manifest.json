@@ -1,28 +1,75 @@
 {
-  "name": "QQ's Sweet Dreams",
+  "name": "QQ's Sweet Dreams - Marcador de Competición",
   "short_name": "QQ Dreams",
-  "description": "Aplicación de marcador para la competición QQ's Sweet Dreams",
+  "description": "Aplicación de marcador para la competición QQ's Sweet Dreams. Sigue las puntuaciones, apuestas y clasificaciones en tiempo real.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",
-  "theme_color": "#000000",
-  "orientation": "portrait",
+  "theme_color": "#3b82f6",
+  "orientation": "portrait-primary",
   "scope": "/",
-  "icons": [
+  "lang": "es",
+  "dir": "ltr",
+  "categories": ["games", "sports", "entertainment"],
+  "screenshots": [
     {
-      "src": "/icon-192x192.png",
-      "sizes": "192x192",
+      "src": "/screenshot-wide.png",
+      "sizes": "1280x720",
       "type": "image/png",
-      "purpose": "maskable"
+      "form_factor": "wide",
+      "label": "Vista principal de la aplicación"
     },
     {
-      "src": "/icon-512x512.png",
-      "sizes": "512x512",
+      "src": "/screenshot-narrow.png",
+      "sizes": "640x1136",
       "type": "image/png",
-      "purpose": "maskable"
+      "form_factor": "narrow",
+      "label": "Vista móvil de la aplicación"
     }
   ],
-  "categories": ["games", "sports"],
-  "lang": "es",
-  "dir": "ltr"
+  "icons": [
+    {
+      "src": "/favicon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Ver Clasificación",
+      "short_name": "Ranking",
+      "description": "Ver la clasificación actual de la competición",
+      "url": "/?section=leaderboard",
+      "icons": [{ "src": "/shortcut-ranking.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Hacer Apuesta",
+      "short_name": "Apostar",
+      "description": "Realizar una nueva apuesta",
+      "url": "/?section=betting",
+      "icons": [{ "src": "/shortcut-betting.png", "sizes": "96x96" }]
+    }
+  ]
 }
