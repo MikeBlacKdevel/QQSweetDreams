@@ -3,7 +3,9 @@
 import { neon } from "@neondatabase/serverless"
 import { revalidatePath } from "next/cache"
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!, {
+  disableWarningInBrowsers: true,
+})
 
 export interface User {
   id: number
@@ -258,6 +260,40 @@ export async function addAward(formData: FormData) {
   }
 }
 
+export async function addQQMejorAward(formData: FormData) {
+  try {
+    await ensureTablesExist()
+
+    const userId = Number.parseInt(formData.get("userId") as string)
+    const description = formData.get("description") as string
+    const points = Number.parseInt(formData.get("points") as string) || 0
+
+    if (!userId || !description || points <= 0) {
+      throw new Error("Usuario, descripción y puntos son requeridos")
+    }
+
+    // Agregar los puntos directamente al usuario
+    await sql`
+      UPDATE users 
+      SET points = points + ${points},
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${userId}
+    `
+
+    // Registrar el premio en el historial (usando la tabla awards con un tipo especial)
+    await sql`
+      INSERT INTO awards (user_id, award_type, hour_time)
+      VALUES (${userId}, 'qq_mejor', CURRENT_TIME)
+    `
+
+    revalidatePath("/")
+    return { success: true }
+  } catch (error) {
+    console.error("Error adding QQ mejor award:", error)
+    return { success: false, error: "Error al otorgar premio QQ mejor" }
+  }
+}
+
 export async function addHour(formData: FormData) {
   try {
     await ensureTablesExist()
@@ -346,5 +382,213 @@ export async function deleteBet(betId: number) {
   } catch (error) {
     console.error("Error deleting bet:", error)
     return { success: false, error: "Error al eliminar apuesta" }
+  }
+}
+
+export async function getQQMejorAwards() {
+  try {
+    await ensureTablesExist()
+
+    const awards = await sql`
+      SELECT 
+        a.id,
+        a.user_id,
+        a.created_at,
+        u.name as user_name,
+        a.award_type
+      FROM awards a
+      JOIN users u ON a.user_id = u.id
+      WHERE a.award_type = 'qq_mejor'
+      ORDER BY a.created_at DESC
+    `
+
+    return awards.map((award) => ({
+      ...award,
+      created_at: award.created_at ? award.created_at.toISOString() : new Date().toISOString(),
+    }))
+  } catch (error) {
+    console.error("Error getting QQ mejor awards:", error)
+    return []
+  }
+}
+
+// También necesitamos modificar la función addQQMejorAward para guardar la descripción
+export async function addQQMejorAwardWithDescription(formData: FormData) {
+  try {
+    await ensureTablesExist()
+
+    const userId = Number.parseInt(formData.get("userId") as string)
+    const description = formData.get("description") as string
+    const points = Number.parseInt(formData.get("points") as string) || 0
+
+    if (!userId || !description.trim() || points <= 0) {
+      throw new Error("Usuario, descripción y puntos son requeridos")
+    }
+
+    // Agregar los puntos directamente al usuario
+    await sql`
+      UPDATE users 
+      SET points = points + ${points},
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${userId}
+    `
+
+    // Crear una tabla específica para QQ Mejor si no existe
+    await sql`
+      CREATE TABLE IF NOT EXISTS qq_mejor_awards (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        description TEXT NOT NULL,
+        points INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `
+
+    // Registrar el premio en la tabla específica
+    await sql`
+      INSERT INTO qq_mejor_awards (user_id, description, points)
+      VALUES (${userId}, ${description}, ${points})
+    `
+
+    // También registrar en la tabla awards para mantener compatibilidad
+    await sql`
+      INSERT INTO awards (user_id, award_type, hour_time)
+      VALUES (${userId}, 'qq_mejor', CURRENT_TIME)
+    `
+
+    revalidatePath("/")
+    return { success: true }
+  } catch (error) {
+    console.error("Error adding QQ mejor award:", error)
+    return { success: false, error: "Error al otorgar premio QQ mejor" }
+  }
+}
+
+export async function getQQMejorAwardsDetailed() {
+  try {
+    await ensureTablesExist()
+
+    // Crear la tabla si no existe
+    await sql`
+      CREATE TABLE IF NOT EXISTS qq_mejor_awards (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        description TEXT NOT NULL,
+        points INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `
+
+    const awards = await sql`
+      SELECT 
+        qa.id,
+        qa.user_id,
+        qa.description,
+        qa.points,
+        qa.created_at,
+        u.name as user_name
+      FROM qq_mejor_awards qa
+      JOIN users u ON qa.user_id = u.id
+      ORDER BY qa.created_at DESC
+    `
+
+    return awards.map((award) => ({
+      ...award,
+      created_at: award.created_at ? award.created_at.toISOString() : new Date().toISOString(),
+    }))
+  } catch (error) {
+    console.error("Error getting detailed QQ mejor awards:", error)
+    return []
+  }
+}
+
+// ============================================================================
+// FUNCIONES PARA PENALIZACIONES
+// ============================================================================
+
+export async function addPenalizationWithDescription(formData: FormData) {
+  try {
+    await ensureTablesExist()
+
+    const userId = Number.parseInt(formData.get("userId") as string)
+    const description = formData.get("description") as string
+    const points = Number.parseInt(formData.get("points") as string) || 0
+    const adminName = formData.get("adminName") as string
+
+    if (!userId || !description.trim() || points <= 0 || !adminName.trim()) {
+      throw new Error("Usuario, descripción, puntos y administrador son requeridos")
+    }
+
+    // Restar los puntos del usuario
+    await sql`
+      UPDATE users 
+      SET points = points - ${points},
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${userId}
+    `
+
+    // Crear una tabla específica para Penalizaciones si no existe
+    await sql`
+      CREATE TABLE IF NOT EXISTS penalizations (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        description TEXT NOT NULL,
+        points INTEGER NOT NULL,
+        admin_name VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `
+
+    // Registrar la penalización en la tabla específica
+    await sql`
+      INSERT INTO penalizations (user_id, description, points, admin_name)
+      VALUES (${userId}, ${description}, ${points}, ${adminName})
+    `
+
+    revalidatePath("/")
+    return { success: true }
+  } catch (error) {
+    console.error("Error adding penalization:", error)
+    return { success: false, error: "Error al otorgar penalización" }
+  }
+}
+
+export async function getPenalizationsDetailed() {
+  try {
+    await ensureTablesExist()
+
+    // Crear la tabla si no existe
+    await sql`
+      CREATE TABLE IF NOT EXISTS penalizations (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        description TEXT NOT NULL,
+        points INTEGER NOT NULL,
+        admin_name VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `
+
+    const penalizations = await sql`
+      SELECT 
+        p.id,
+        p.user_id,
+        p.description,
+        p.points,
+        p.admin_name,
+        p.created_at,
+        u.name as user_name
+      FROM penalizations p
+      JOIN users u ON p.user_id = u.id
+      ORDER BY p.created_at DESC
+    `
+
+    return penalizations.map((penalization) => ({
+      ...penalization,
+      created_at: penalization.created_at ? penalization.created_at.toISOString() : new Date().toISOString(),
+    }))
+  } catch (error) {
+    console.error("Error getting detailed penalizations:", error)
+    return []
   }
 }

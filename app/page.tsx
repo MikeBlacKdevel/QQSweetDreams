@@ -1,9 +1,14 @@
 import { Suspense } from "react"
-import { getUsers, getBets } from "./actions"
+import { getUsers, getBets, getQQMejorAwardsDetailed, getPenalizationsDetailed } from "./actions"
 import MarcadorClient from "./marcador-client"
 
 export default async function Marcador() {
-  const [users, bets] = await Promise.all([getUsers(), getBets()])
+  const [users, bets, qqMejorAwards, penalizations] = await Promise.all([
+    getUsers(),
+    getBets(),
+    getQQMejorAwardsDetailed(),
+    getPenalizationsDetailed(),
+  ])
 
   return (
     <Suspense
@@ -16,7 +21,12 @@ export default async function Marcador() {
         </div>
       }
     >
-      <MarcadorClient initialUsers={users} initialBets={bets} />
+      <MarcadorClient
+        initialUsers={users}
+        initialBets={bets}
+        initialQQMejorAwards={qqMejorAwards}
+        initialPenalizations={penalizations}
+      />
     </Suspense>
   )
 }

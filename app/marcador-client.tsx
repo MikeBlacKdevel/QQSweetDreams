@@ -1,144 +1,122 @@
 "use client"
 
 import type React from "react"
-import { useState, useTransition, useEffect } from "react"
-import { Plus, Edit, Trash2, Award, MessageCircle, Lock, Clock, Trophy, Medal, Menu, X } from "lucide-react"
-import { addUser, updateUser, deleteUser, addAward, addHour, addBet, updateBet, deleteBet } from "./actions"
+import { useState, useEffect, useCallback, useTransition, lazy, Suspense } from "react"
+import { addUser, updateUser, deleteUser } from "./actions"
 
-// ============================================================================
-// INTERFACES Y TIPOS
-// ============================================================================
+// Components - Critical components loaded immediately
+import Header from "./components/header"
+import Sidebar from "./components/sidebar"
+import Leaderboard from "./components/leaderboard"
+import Modal from "./components/modal"
 
-interface Bet {
-  id: number
-  bettor_name: string
-  predicted_winner: string
-  bet_date: string
-  status: string
-  points_awarded: number
-  created_at: string
-}
+// Lazy load non-critical components
+const Betting = lazy(() => import("./components/betting"))
+const Rivals = lazy(() => import("./components/rivals"))
+const QQMejor = lazy(() => import("./components/qq-mejor"))
+const Penalizations = lazy(() => import("./components/penalizations"))
 
-interface User {
-  id: number
-  name: string
-  whatsapp: string
-  trophies: number
-  gold_medals: number
-  silver_medals: number
-  bronze_medals: number
-  points: number
-  horas: string[]
-}
+// Hooks and utilities
+import { useAuth } from "./hooks/useAuth"
+import { useTheme } from "./hooks/useTheme"
+import { getTotalPoints, getHoraMedia } from "./utils/calculations"
+import { INITIAL_TIME, AWARD_TYPES } from "./types"
 
-interface Props {
-  initialUsers: User[]
-  initialBets: Bet[]
-}
+// Types
+import type { User, Bet, Props } from "./types"
 
-// ============================================================================
-// CONSTANTES
-// ============================================================================
+// Loading component
+const LoadingSpinner = () => (
+  <div className="flex items-center justify-center py-8">
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+  </div>
+)
 
-const INITIAL_TIME = "08:00"
-const ADMIN_PASSWORD = "!m2YieLN#HLJrbk^qz8n$yiJZjt40@QnmAR$aWjXUj&8#F9c*L"
-const AWARD_TYPES = {
-  COPA: "copa",
-  ORO: "oro",
-  PLATA: "plata",
-  BRONCE: "bronce",
-} as const
-
-const POINTS_SYSTEM = {
-  COPA: 3,
-  ORO: 2,
-  PLATA: 1,
-  BRONCE: 0.5,
-} as const
-
-// ============================================================================
-// COMPONENTE PRINCIPAL
-// ============================================================================
-
-export default function MarcadorClient({ initialUsers, initialBets }: Props) {
-  // ----------------------------------------------------------------------------
-  // ESTADO PRINCIPAL
-  // ----------------------------------------------------------------------------
-  const [users, setUsers] = useState<User[]>(initialUsers)
-  const [bets, setBets] = useState<Bet[]>(initialBets)
+export default function MarcadorClient({
+  initialUsers,
+  initialBets,
+  initialQQMejorAwards,
+  initialPenalizations,
+}: Props) {
+  // ============================================================================
+  // HOOKS Y ESTADO PRINCIPAL
+  // ============================================================================
+  const [users, setUsers] = useState(initialUsers)
+  const [bets, setBets] = useState(initialBets)
+  const [qqMejorAwards, setQQMejorAwards] = useState(initialQQMejorAwards)
+  const [penalizations, setPenalizations] = useState(initialPenalizations)
   const [isPending, startTransition] = useTransition()
   const [isMobile, setIsMobile] = useState(false)
 
-  // ----------------------------------------------------------------------------
-  // ESTADO DE AUTENTICACIÓN
-  // ----------------------------------------------------------------------------
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [password, setPassword] = useState("")
+  const { isAuthenticated, password, setPassword, handleAuth, handleLogout } = useAuth()
+  const { isDarkMode, toggleTheme } = useTheme()
+
+  // ============================================================================
+  // ESTADO DE NAVEGACIÓN Y MODALES
+  // ============================================================================
+  const [activeSection, setActiveSection] = useState("leaderboard")
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isAuthOpen, setIsAuthOpen] = useState(false)
-
-  // ----------------------------------------------------------------------------
-  // ESTADO DE MODALES
-  // ----------------------------------------------------------------------------
-  const [isAddUserOpen, setIsAddUserOpen] = useState(false)
-  const [isAddCopaOpen, setIsAddCopaOpen] = useState(false)
-  const [isAddHoraOpen, setIsAddHoraOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
-  const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false)
-  const [isRulesOpen, setIsRulesOpen] = useState(false)
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
-
-  // ----------------------------------------------------------------------------
-  // ESTADO DE APUESTAS
-  // ----------------------------------------------------------------------------
-  const [isBetOpen, setIsBetOpen] = useState(false)
-  const [isManageBetsOpen, setIsManageBetsOpen] = useState(false)
   const [editingBet, setEditingBet] = useState<Bet | null>(null)
 
-  // ----------------------------------------------------------------------------
-  // ESTADO DE RIVALS
-  // ----------------------------------------------------------------------------
-  const [isRivalsOpen, setIsRivalsOpen] = useState(false)
-  const [isRivalsHowItWorksOpen, setIsRivalsHowItWorksOpen] = useState(false)
-  const [isManageRivalsOpen, setIsManageRivalsOpen] = useState(false)
-  const [rivalsBettorName, setRivalsBettorName] = useState("")
-  const [rivalsTarget, setRivalsTarget] = useState("")
+  // Estados de modales
+  const [modals, setModals] = useState({
+    addUser: false,
+    addAward: false,
+    addHour: false,
+    bet: false,
+    rivals: false,
+    qqMejorAward: false,
+    penalizationAward: false,
+    howItWorks: false,
+    rules: false,
+    qqMejor: false,
+    penalizations: false,
+    rivalsHowItWorks: false,
+    manageBets: false,
+    manageRivals: false,
+  })
 
-  // ----------------------------------------------------------------------------
-  // ESTADO DE FORMULARIOS - PREMIOS
-  // ----------------------------------------------------------------------------
-  const [copaTipo, setCopaTipo] = useState(AWARD_TYPES.COPA)
-  const [copaHora, setCopaHora] = useState(INITIAL_TIME)
-  const [copaUserId, setCopaUserId] = useState("")
-
-  // ----------------------------------------------------------------------------
-  // ESTADO DE FORMULARIOS - HORAS
-  // ----------------------------------------------------------------------------
-  const [horaUserId, setHoraUserId] = useState("")
-  const [horaValue, setHoraValue] = useState(INITIAL_TIME)
-
-  // ----------------------------------------------------------------------------
-  // ESTADO DE FORMULARIOS - APUESTAS
-  // ----------------------------------------------------------------------------
-  const [bettorName, setBettorName] = useState("")
-  const [predictedWinner, setPredictedWinner] = useState("")
-  const [betStatus, setBetStatus] = useState("pending")
-  const [betPoints, setBetPoints] = useState(0)
-
-  // ----------------------------------------------------------------------------
-  // ESTADO DE FORMULARIOS - USUARIOS
-  // ----------------------------------------------------------------------------
-  const [userName, setUserName] = useState("")
-  const [userWhatsapp, setUserWhatsapp] = useState("")
-  const [userTrophies, setUserTrophies] = useState(0)
-  const [userGoldMedals, setUserGoldMedals] = useState(0)
-  const [userSilverMedals, setUserSilverMedals] = useState(0)
-  const [userBronzeMedals, setUserBronzeMedals] = useState(0)
-  const [userPoints, setUserPoints] = useState(0)
+  // Estados de formularios
+  const [formData, setFormData] = useState({
+    // User form
+    userName: "",
+    userWhatsapp: "",
+    userTrophies: 0,
+    userGoldMedals: 0,
+    userSilverMedals: 0,
+    userBronzeMedals: 0,
+    userPoints: 0,
+    // Award form
+    copaUserId: "",
+    copaTipo: AWARD_TYPES.COPA,
+    copaHora: INITIAL_TIME,
+    // Hour form
+    horaUserId: "",
+    horaValue: INITIAL_TIME,
+    // Bet form
+    bettorName: "",
+    predictedWinner: "",
+    betStatus: "pending",
+    betPoints: 0,
+    // Rivals form
+    rivalsBettorName: "",
+    rivalsTarget: "",
+    // QQ Mejor form
+    qqMejorUserId: "",
+    qqMejorDescription: "",
+    qqMejorPoints: 0,
+    // Penalization form
+    penalizationUserId: "",
+    penalizationDescription: "",
+    penalizationPoints: 0,
+    penalizationAdminName: "",
+  })
 
   // ============================================================================
   // EFECTOS
   // ============================================================================
-
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768)
@@ -146,1178 +124,342 @@ export default function MarcadorClient({ initialUsers, initialBets }: Props) {
 
     checkMobile()
     window.addEventListener("resize", checkMobile)
-
     return () => window.removeEventListener("resize", checkMobile)
   }, [])
 
   // ============================================================================
   // FUNCIONES UTILITARIAS
   // ============================================================================
+  const openModal = useCallback((modalName: string) => {
+    setModals((prev) => ({ ...prev, [modalName]: true }))
+    setIsSidebarOpen(false)
+  }, [])
 
-  /**
-   * Calcula el total de puntos de un usuario basado en sus premios
-   */
-  const getTotalPoints = (user: User): number => {
-    return (
-      user.trophies * POINTS_SYSTEM.COPA +
-      user.gold_medals * POINTS_SYSTEM.ORO +
-      user.silver_medals * POINTS_SYSTEM.PLATA +
-      user.bronze_medals * POINTS_SYSTEM.BRONCE +
-      user.points
-    )
-  }
+  const closeModal = useCallback((modalName: string) => {
+    setModals((prev) => ({ ...prev, [modalName]: false }))
+  }, [])
 
-  /**
-   * Calcula la hora media de sueño de un usuario
-   */
-  const getHoraMedia = (user: User): string => {
-    if (!user.horas || user.horas.length === 0) return "N/A"
+  const updateFormData = useCallback((updates: Partial<typeof formData>) => {
+    setFormData((prev) => ({ ...prev, ...updates }))
+  }, [])
 
-    try {
-      const totalMinutes = user.horas.reduce((acc, hora) => {
-        const [hours, minutes] = hora.split(":").map(Number)
-        return acc + hours * 60 + minutes
-      }, 0)
-
-      const avgMinutes = totalMinutes / user.horas.length
-      const avgHours = Math.floor(avgMinutes / 60)
-      const avgMins = Math.round(avgMinutes % 60)
-
-      return `${avgHours.toString().padStart(2, "0")}:${avgMins.toString().padStart(2, "0")}`
-    } catch (e) {
-      return "N/A"
-    }
-  }
-
-  /**
-   * Resetea todos los campos del formulario de usuario
-   */
-  const resetUserForm = (): void => {
-    setUserName("")
-    setUserWhatsapp("")
-    setUserTrophies(0)
-    setUserGoldMedals(0)
-    setUserSilverMedals(0)
-    setUserBronzeMedals(0)
-    setUserPoints(0)
-  }
-
-  /**
-   * Resetea todos los campos del formulario de premios
-   */
-  const resetCopaForm = (): void => {
-    setCopaUserId("")
-    setCopaTipo(AWARD_TYPES.COPA)
-    setCopaHora(INITIAL_TIME)
-  }
-
-  /**
-   * Resetea todos los campos del formulario de horas
-   */
-  const resetHoraForm = (): void => {
-    setHoraUserId("")
-    setHoraValue(INITIAL_TIME)
-  }
-
-  /**
-   * Resetea todos los campos del formulario de apuestas
-   */
-  const resetBetForm = (): void => {
-    setBettorName("")
-    setPredictedWinner("")
-    setBetStatus("pending")
-    setBetPoints(0)
-  }
-
-  /**
-   * Resetea todos los campos del formulario de RIVALS
-   */
-  const resetRivalsForm = (): void => {
-    setRivalsBettorName("")
-    setRivalsTarget("")
-  }
-
-  /**
-   * Ordena los usuarios por puntos totales (descendente)
-   */
-  const sortedUsers = [...users]
-    .filter((user) => getTotalPoints(user) > 0)
-    .sort((a, b) => getTotalPoints(b) - getTotalPoints(a))
+  const resetFormData = useCallback(() => {
+    setFormData({
+      userName: "",
+      userWhatsapp: "",
+      userTrophies: 0,
+      userGoldMedals: 0,
+      userSilverMedals: 0,
+      userBronzeMedals: 0,
+      userPoints: 0,
+      copaUserId: "",
+      copaTipo: AWARD_TYPES.COPA,
+      copaHora: INITIAL_TIME,
+      horaUserId: "",
+      horaValue: INITIAL_TIME,
+      bettorName: "",
+      predictedWinner: "",
+      betStatus: "pending",
+      betPoints: 0,
+      rivalsBettorName: "",
+      rivalsTarget: "",
+      qqMejorUserId: "",
+      qqMejorDescription: "",
+      qqMejorPoints: 0,
+      penalizationUserId: "",
+      penalizationDescription: "",
+      penalizationPoints: 0,
+      penalizationAdminName: "",
+    })
+  }, [])
 
   // ============================================================================
-  // MANEJADORES DE EVENTOS - AUTENTICACIÓN
+  // MANEJADORES DE EVENTOS (Simplified for performance)
   // ============================================================================
-
-  const handleAuth = (): void => {
-    if (password === ADMIN_PASSWORD) {
-      setIsAuthenticated(true)
+  const handleAuthSubmit = useCallback(() => {
+    if (handleAuth()) {
       setIsAuthOpen(false)
-      setPassword("")
     } else {
       alert("Contraseña incorrecta")
     }
-  }
+  }, [handleAuth])
 
-  const handleLogout = (): void => {
-    setIsAuthenticated(false)
-  }
-
-  // ============================================================================
-  // MANEJADORES DE EVENTOS - USUARIOS
-  // ============================================================================
-
-  const handleAddUser = async (e: React.FormEvent): Promise<void> => {
-    e.preventDefault()
-    if (!userName.trim() || !userWhatsapp.trim()) return
-
-    const formData = new FormData()
-    formData.append("name", userName.trim())
-    formData.append("whatsapp", userWhatsapp.trim())
-    formData.append("trophies", userTrophies.toString())
-    formData.append("goldMedals", userGoldMedals.toString())
-    formData.append("silverMedals", userSilverMedals.toString())
-    formData.append("bronzeMedals", userBronzeMedals.toString())
-    formData.append("points", userPoints.toString())
-
-    startTransition(async () => {
-      const result = await addUser(formData)
-      if (result.success) {
-        resetUserForm()
-        setIsAddUserOpen(false)
-        window.location.reload()
-      } else {
-        alert(result.error)
-      }
-    })
-  }
-
-  const handleEditUser = (user: User): void => {
-    setEditingUser(user)
-    setUserName(user.name)
-    setUserWhatsapp(user.whatsapp)
-    setUserTrophies(user.trophies)
-    setUserGoldMedals(user.gold_medals)
-    setUserSilverMedals(user.silver_medals)
-    setUserBronzeMedals(user.bronze_medals)
-    setUserPoints(user.points)
-  }
-
-  const handleUpdateUser = async (e: React.FormEvent): Promise<void> => {
-    e.preventDefault()
-    if (!editingUser || !userName.trim() || !userWhatsapp.trim()) return
-
-    const formData = new FormData()
-    formData.append("id", editingUser.id.toString())
-    formData.append("name", userName.trim())
-    formData.append("whatsapp", userWhatsapp.trim())
-    formData.append("trophies", userTrophies.toString())
-    formData.append("goldMedals", userGoldMedals.toString())
-    formData.append("silverMedals", userSilverMedals.toString())
-    formData.append("bronzeMedals", userBronzeMedals.toString())
-    formData.append("points", userPoints.toString())
-
-    startTransition(async () => {
-      const result = await updateUser(formData)
-      if (result.success) {
-        setEditingUser(null)
-        resetUserForm()
-        window.location.reload()
-      } else {
-        alert(result.error)
-      }
-    })
-  }
-
-  const handleDeleteUser = async (id: number): Promise<void> => {
-    if (!confirm("¿Estás seguro de que quieres eliminar este usuario?")) return
-
-    startTransition(async () => {
-      const result = await deleteUser(id)
-      if (result.success) {
-        window.location.reload()
-      } else {
-        alert(result.error)
-      }
-    })
-  }
-
-  // ============================================================================
-  // MANEJADORES DE EVENTOS - PREMIOS
-  // ============================================================================
-
-  const handleAddCopa = async (e: React.FormEvent): Promise<void> => {
-    e.preventDefault()
-    if (!copaUserId || !copaTipo) return
-
-    const formData = new FormData()
-    formData.append("userId", copaUserId)
-    formData.append("awardType", copaTipo)
-    formData.append("hourTime", copaHora)
-
-    startTransition(async () => {
-      const result = await addAward(formData)
-      if (result.success) {
-        resetCopaForm()
-        setIsAddCopaOpen(false)
-        window.location.reload()
-      } else {
-        alert(result.error)
-      }
-    })
-  }
-
-  // ============================================================================
-  // MANEJADORES DE EVENTOS - HORAS
-  // ============================================================================
-
-  const handleAddHora = async (e: React.FormEvent): Promise<void> => {
-    e.preventDefault()
-    if (!horaUserId || !horaValue) return
-
-    const formData = new FormData()
-    formData.append("userId", horaUserId)
-    formData.append("hourTime", horaValue)
-
-    startTransition(async () => {
-      const result = await addHour(formData)
-      if (result.success) {
-        resetHoraForm()
-        setIsAddHoraOpen(false)
-        window.location.reload()
-      } else {
-        alert(result.error)
-      }
-    })
-  }
-
-  // ============================================================================
-  // MANEJADORES DE EVENTOS - APUESTAS
-  // ============================================================================
-
-  const handleAddBet = async (e: React.FormEvent): Promise<void> => {
-    e.preventDefault()
-    if (!bettorName.trim() || !predictedWinner.trim()) return
-
-    const formData = new FormData()
-    formData.append("bettorName", bettorName.trim())
-    formData.append("predictedWinner", predictedWinner.trim())
-
-    startTransition(async () => {
-      const result = await addBet(formData)
-      if (result.success) {
-        resetBetForm()
-        setIsBetOpen(false)
-        window.location.reload()
-      } else {
-        alert(result.error)
-      }
-    })
-  }
-
-  const handleEditBet = (bet: Bet): void => {
-    setEditingBet(bet)
-    setBettorName(bet.bettor_name)
-    setPredictedWinner(bet.predicted_winner)
-    setBetStatus(bet.status)
-    setBetPoints(bet.points_awarded)
-  }
-
-  const handleUpdateBet = async (e: React.FormEvent): Promise<void> => {
-    e.preventDefault()
-    if (!editingBet || !bettorName.trim() || !predictedWinner.trim()) return
-
-    const formData = new FormData()
-    formData.append("id", editingBet.id.toString())
-    formData.append("bettorName", bettorName.trim())
-    formData.append("predictedWinner", predictedWinner.trim())
-    formData.append("status", betStatus)
-    formData.append("pointsAwarded", betPoints.toString())
-
-    startTransition(async () => {
-      const result = await updateBet(formData)
-      if (result.success) {
-        setEditingBet(null)
-        resetBetForm()
-        window.location.reload()
-      } else {
-        alert(result.error)
-      }
-    })
-  }
-
-  const handleDeleteBet = async (id: number): Promise<void> => {
-    if (!confirm("¿Estás seguro de que quieres eliminar esta apuesta?")) return
-
-    startTransition(async () => {
-      const result = await deleteBet(id)
-      if (result.success) {
-        window.location.reload()
-      } else {
-        alert(result.error)
-      }
-    })
-  }
-
-  // ============================================================================
-  // MANEJADORES DE EVENTOS - RIVALS
-  // ============================================================================
-
-  const handleAddRivals = async (e: React.FormEvent): Promise<void> => {
-    e.preventDefault()
-    if (!rivalsBettorName.trim() || !rivalsTarget.trim()) return
-
-    const targetUser = users.find((user) => user.name.toLowerCase().includes(rivalsTarget.toLowerCase()))
-    if (!targetUser || getTotalPoints(targetUser) === 0) {
-      alert("Solo puedes apostar contra usuarios que ya tengan puntos en su cuenta")
-      return
+  const handleAuthClick = useCallback(() => {
+    if (isAuthenticated) {
+      handleLogout()
+    } else {
+      setIsAuthOpen(true)
     }
+  }, [isAuthenticated, handleLogout])
 
-    const formData = new FormData()
-    formData.append("bettorName", rivalsBettorName.trim())
-    formData.append("predictedWinner", `RIVALS: ${rivalsTarget.trim()}`)
-    formData.append("rivalsBet", "true")
+  const handleSectionChange = useCallback((section: string) => {
+    setActiveSection(section)
+    setIsSidebarOpen(false)
+  }, [])
 
-    startTransition(async () => {
-      const result = await addBet(formData)
-      if (result.success) {
-        resetRivalsForm()
-        setIsRivalsOpen(false)
-        window.location.reload()
-      } else {
-        alert(result.error)
+  const handleModalOpen = useCallback(
+    (modalName: string) => {
+      const modalMappings: { [key: string]: string } = {
+        "add-user": "addUser",
+        "add-award": "addAward",
+        "add-hour": "addHour",
+        "qq-mejor-award": "qqMejorAward",
+        "penalization-award": "penalizationAward",
+        "manage-bets": "manageBets",
+        "manage-rivals": "manageRivals",
+        "how-it-works": "howItWorks",
+        rules: "rules",
+        "qq-mejor": "qqMejor",
+        penalizations: "penalizations",
+        "rivals-how-it-works": "rivalsHowItWorks",
       }
-    })
-  }
 
-  // ============================================================================
-  // MANEJADORES DE EVENTOS - OTROS
-  // ============================================================================
-
-  const openWhatsApp = (): void => {
-    alert("¿De verdad que pensabas que esto funcionaría? Anda cierra.")
-  }
-
-  // ============================================================================
-  // COMPONENTES DE RENDERIZADO
-  // ============================================================================
-
-  const renderMobileHeader = () => (
-    <header className="ios-nav safe-top">
-      <div className="flex items-center justify-between px-4 py-3">
-        <button
-          onClick={() => setIsMenuOpen(true)}
-          className="touch-button p-2 rounded-lg glass-light"
-          aria-label="Abrir menú"
-        >
-          <Menu className="w-5 h-5 text-white" />
-        </button>
-
-        <h1 className="text-lg font-bold fire-text">QQ's Sweet Dreams</h1>
-
-        <button
-          onClick={() => {
-            if (isAuthenticated) {
-              handleLogout()
-            } else {
-              setIsAuthOpen(true)
-            }
-          }}
-          className="touch-button p-2 rounded-lg glass-light"
-          disabled={isPending}
-          aria-label={isAuthenticated ? "Cerrar sesión" : "Iniciar sesión"}
-        >
-          <Lock className="w-5 h-5 text-white" />
-        </button>
-      </div>
-    </header>
+      const modalKey = modalMappings[modalName] || modalName
+      openModal(modalKey)
+    },
+    [openModal],
   )
 
-  const renderDesktopHeader = () => (
-    <div className="text-center mb-8">
-      <div className="float">
-        <h1 className="text-4xl mb-3 fire-text">QQ's Sweet Dreams</h1>
-        <div className="w-16 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent mx-auto mb-4"></div>
-      </div>
-
-      <div className="glass rounded-xl p-4 mb-6 max-w-lg mx-auto">
-        <h2 className="text-lg font-light text-white/90 mb-2">Temporada 1 - Campeón</h2>
-        <div className="text-xl font-medium text-white mb-3">Biker Outlet Week</div>
-        <div className="w-8 h-px bg-white/15 mx-auto mb-2"></div>
-        <h3 className="text-base font-light text-green-400 mb-3">Temporada 2 - En Progreso</h3>
-
-        <div className="flex justify-center gap-3">
-          <button
-            onClick={() => setIsHowItWorksOpen(true)}
-            className="glass-light rounded-lg px-4 py-2 text-sm text-white/90 hover:bg-white/8 transition-all duration-200 touch-button border border-white/10 hover:border-white/20"
-          >
-            ¿Cómo funciona?
-          </button>
-          <button
-            onClick={() => setIsRulesOpen(true)}
-            className="glass-light rounded-lg px-4 py-2 text-sm text-white/90 hover:bg-white/8 transition-all duration-200 touch-button border border-white/10 hover:border-white/20"
-          >
-            Normas
-          </button>
-        </div>
-      </div>
-
-      <div className="flex justify-end mb-6">
-        <button
-          onClick={() => {
-            if (isAuthenticated) {
-              handleLogout()
-            } else {
-              setIsAuthOpen(true)
-            }
-          }}
-          className="glass-light rounded-lg px-4 py-2 text-sm text-white/90 hover:bg-white/8 transition-all duration-200 touch-button flex items-center gap-2"
-          disabled={isPending}
-        >
-          <Lock className="w-3 h-3" />
-          <span className="font-medium">{isAuthenticated ? "Cerrar Sesión" : "Admin"}</span>
-        </button>
-      </div>
-    </div>
+  // Simplified handlers for better performance
+  const handleEditUser = useCallback(
+    (user: User) => {
+      setEditingUser(user)
+      updateFormData({
+        userName: user.name,
+        userWhatsapp: user.whatsapp,
+        userTrophies: user.trophies,
+        userGoldMedals: user.gold_medals,
+        userSilverMedals: user.silver_medals,
+        userBronzeMedals: user.bronze_medals,
+        userPoints: user.points,
+      })
+      openModal("addUser")
+    },
+    [updateFormData, openModal],
   )
 
-  const renderMobileMenu = () => (
-    <div className={`fixed inset-0 z-50 ${isMenuOpen ? "block" : "hidden"}`}>
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsMenuOpen(false)} />
-      <div className="absolute left-0 top-0 bottom-0 w-80 max-w-[85vw] glass-dark safe-left safe-top safe-bottom">
-        <div className="p-4">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-white">Menú</h2>
-            <button onClick={() => setIsMenuOpen(false)} className="touch-button p-2 rounded-lg glass-light">
-              <X className="w-5 h-5 text-white" />
-            </button>
-          </div>
+  const handleAddUser = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault()
+      if (!formData.userName.trim() || !formData.userWhatsapp.trim()) return
 
-          <nav className="space-y-2">
-            <button
-              onClick={() => {
-                setIsHowItWorksOpen(true)
-                setIsMenuOpen(false)
-              }}
-              className="w-full text-left p-3 rounded-lg glass-light text-white hover:bg-white/10 transition-colors"
-            >
-              ¿Cómo funciona?
-            </button>
-            <button
-              onClick={() => {
-                setIsRulesOpen(true)
-                setIsMenuOpen(false)
-              }}
-              className="w-full text-left p-3 rounded-lg glass-light text-white hover:bg-white/10 transition-colors"
-            >
-              Normas
-            </button>
-            <button
-              onClick={() => {
-                setIsBetOpen(true)
-                setIsMenuOpen(false)
-              }}
-              className="w-full text-left p-3 rounded-lg accent-primary text-white transition-colors"
-            >
-              🔥 Apostar
-            </button>
-            <button
-              onClick={() => {
-                setIsRivalsOpen(true)
-                setIsMenuOpen(false)
-              }}
-              className="w-full text-left p-3 rounded-lg accent-danger text-white transition-colors"
-            >
-              🔥 RIVALS
-            </button>
-
-            {isAuthenticated && (
-              <>
-                <div className="border-t border-white/10 my-4"></div>
-                <h3 className="text-sm font-medium text-white/70 mb-2">Administración</h3>
-                <button
-                  onClick={() => {
-                    setIsAddUserOpen(true)
-                    setIsMenuOpen(false)
-                  }}
-                  className="w-full text-left p-3 rounded-lg glass-light text-white hover:bg-white/10 transition-colors"
-                >
-                  <Plus className="w-4 h-4 inline mr-2" />
-                  Agregar Usuario
-                </button>
-                <button
-                  onClick={() => {
-                    setIsAddCopaOpen(true)
-                    setIsMenuOpen(false)
-                  }}
-                  className="w-full text-left p-3 rounded-lg glass-light text-white hover:bg-white/10 transition-colors"
-                >
-                  <Award className="w-4 h-4 inline mr-2" />
-                  Agregar Premio
-                </button>
-                <button
-                  onClick={() => {
-                    setIsAddHoraOpen(true)
-                    setIsMenuOpen(false)
-                  }}
-                  className="w-full text-left p-3 rounded-lg glass-light text-white hover:bg-white/10 transition-colors"
-                >
-                  <Clock className="w-4 h-4 inline mr-2" />
-                  Agregar Hora
-                </button>
-                <button
-                  onClick={() => {
-                    setIsManageBetsOpen(true)
-                    setIsMenuOpen(false)
-                  }}
-                  className="w-full text-left p-3 rounded-lg glass-light text-white hover:bg-white/10 transition-colors"
-                >
-                  Gestionar Apuestas
-                </button>
-              </>
-            )}
-          </nav>
-        </div>
-      </div>
-    </div>
-  )
-
-  const renderAdminControls = () =>
-    !isMobile &&
-    isAuthenticated && (
-      <div className="glass-dark rounded-xl p-4 mb-8">
-        <div className="flex flex-wrap gap-2 justify-center">
-          <button
-            onClick={() => setIsAddUserOpen(true)}
-            className="accent-success text-white px-4 py-2 rounded-lg flex items-center gap-2 touch-button text-sm font-medium border border-white/8 hover:border-white/15"
-            disabled={isPending}
-          >
-            <Plus className="w-3 h-3" />
-            Usuario
-          </button>
-          <button
-            onClick={() => setIsAddCopaOpen(true)}
-            className="accent-warning text-white px-4 py-2 rounded-lg flex items-center gap-2 touch-button text-sm font-medium border border-white/8 hover:border-white/15"
-            disabled={isPending}
-          >
-            <Award className="w-3 h-3" />
-            Premio
-          </button>
-          <button
-            onClick={() => setIsAddHoraOpen(true)}
-            className="accent-info text-white px-4 py-2 rounded-lg flex items-center gap-2 touch-button text-sm font-medium border border-white/8 hover:border-white/15"
-            disabled={isPending}
-          >
-            <Clock className="w-3 h-3" />
-            Hora
-          </button>
-        </div>
-      </div>
-    )
-
-  const renderLeaderboard = () => {
-    /**
-     * Calcula el estilo basado en los puntos del usuario
-     */
-    const getPointsStyle = (points: number) => {
-      if (points > 50) {
-        // Fondo dorado para más de 50 puntos
-        return {
-          background: "bg-gradient-to-br from-yellow-500/20 via-amber-500/15 to-yellow-600/20 border-yellow-400/40",
-          position: "bg-gradient-to-br from-yellow-500 to-amber-600 text-black border-2 border-yellow-300",
-          name: "text-yellow-100",
-          pointsBadge: "bg-gradient-to-br from-yellow-600 to-amber-700 text-yellow-100 border-yellow-400/80",
-        }
-      } else if (points === 3) {
-        // Azul intenso para 3 puntos
-        return {
-          background: "bg-blue-600/15 border-blue-400/40",
-          position: "bg-blue-600 text-white border-2 border-blue-400",
-          name: "text-blue-200",
-          pointsBadge: "bg-blue-700 text-blue-100 border-blue-500/80",
-        }
-      } else if (points === 2) {
-        // Azul medio para 2 puntos
-        return {
-          background: "bg-blue-500/12 border-blue-400/30",
-          position: "bg-blue-500 text-white border-2 border-blue-300",
-          name: "text-blue-300",
-          pointsBadge: "bg-blue-600 text-blue-100 border-blue-400/70",
-        }
-      } else if (points === 1) {
-        // Azul suave para 1 punto
-        return {
-          background: "bg-blue-400/8 border-blue-400/20",
-          position: "bg-blue-400 text-white border-2 border-blue-200",
-          name: "text-blue-400",
-          pointsBadge: "bg-blue-500 text-blue-200 border-blue-300/60",
-        }
-      } else {
-        // Sin estilo especial para otros valores
-        return null
+      const data = new FormData()
+      if (editingUser) {
+        data.append("id", editingUser.id.toString())
       }
+      data.append("name", formData.userName.trim())
+      data.append("whatsapp", formData.userWhatsapp.trim())
+      data.append("trophies", formData.userTrophies.toString())
+      data.append("goldMedals", formData.userGoldMedals.toString())
+      data.append("silverMedals", formData.userSilverMedals.toString())
+      data.append("bronzeMedals", formData.userBronzeMedals.toString())
+      data.append("points", formData.userPoints.toString())
+
+      startTransition(async () => {
+        const result = editingUser ? await updateUser(data) : await addUser(data)
+        if (result.success) {
+          resetFormData()
+          setEditingUser(null)
+          closeModal("addUser")
+          window.location.reload()
+        } else {
+          alert(result.error)
+        }
+      })
+    },
+    [formData, editingUser, resetFormData, closeModal, startTransition],
+  )
+
+  const handleDeleteUser = useCallback(
+    async (id: number) => {
+      if (!confirm("¿Estás seguro de que quieres eliminar este usuario?")) return
+
+      startTransition(async () => {
+        const result = await deleteUser(id)
+        if (result.success) {
+          window.location.reload()
+        } else {
+          alert(result.error)
+        }
+      })
+    },
+    [startTransition],
+  )
+
+  // ============================================================================
+  // RENDERIZADO DE CONTENIDO
+  // ============================================================================
+  const renderContent = () => {
+    switch (activeSection) {
+      case "betting":
+        return (
+          <Suspense fallback={<LoadingSpinner />}>
+            <Betting
+              bets={bets}
+              users={users}
+              isAuthenticated={isAuthenticated}
+              isPending={isPending}
+              onOpenBet={() => openModal("bet")}
+              onManageBets={() => openModal("manageBets")}
+              getTotalPoints={getTotalPoints}
+            />
+          </Suspense>
+        )
+      case "rivals":
+        return (
+          <Suspense fallback={<LoadingSpinner />}>
+            <Rivals
+              bets={bets}
+              users={users}
+              isAuthenticated={isAuthenticated}
+              isPending={isPending}
+              onOpenRivals={() => openModal("rivals")}
+              onRivalsHowItWorks={() => openModal("rivalsHowItWorks")}
+              onManageRivals={() => openModal("manageRivals")}
+              getTotalPoints={getTotalPoints}
+            />
+          </Suspense>
+        )
+      case "qq-mejor":
+        return (
+          <Suspense fallback={<LoadingSpinner />}>
+            <QQMejor
+              qqMejorAwards={qqMejorAwards}
+              isAuthenticated={isAuthenticated}
+              onOpenQQMejor={() => openModal("qqMejor")}
+              onQQMejorAward={() => openModal("qqMejorAward")}
+            />
+          </Suspense>
+        )
+      case "penalizations":
+        return (
+          <Suspense fallback={<LoadingSpinner />}>
+            <Penalizations
+              penalizations={penalizations}
+              isAuthenticated={isAuthenticated}
+              onOpenPenalizations={() => openModal("penalizations")}
+              onPenalizationAward={() => openModal("penalizationAward")}
+            />
+          </Suspense>
+        )
+      default:
+        return (
+          <Leaderboard
+            users={users}
+            isAuthenticated={isAuthenticated}
+            isPending={isPending}
+            onEditUser={handleEditUser}
+            onDeleteUser={handleDeleteUser}
+            onAddUser={() => openModal("addUser")}
+            getTotalPoints={getTotalPoints}
+            getHoraMedia={getHoraMedia}
+          />
+        )
     }
-
-    return (
-      <div className="glass rounded-xl overflow-hidden mb-6">
-        <div className="p-4 text-center border-b border-white/8">
-          <h2 className="text-xl font-light text-white">Clasificación</h2>
-        </div>
-
-        <div className="p-4">
-          {sortedUsers.length === 0 ? (
-            <div className="text-center py-8">
-              <div className="text-3xl mb-3 opacity-20">🏆</div>
-              <p className="text-white/50 text-sm mb-4 font-light">Sin participantes</p>
-              {isAuthenticated && (
-                <button
-                  onClick={() => setIsAddUserOpen(true)}
-                  className="accent-success text-white px-4 py-2 rounded-lg flex items-center gap-2 mx-auto touch-button text-sm font-medium border border-white/8"
-                  disabled={isPending}
-                >
-                  <Plus className="w-3 h-3" />
-                  Agregar Usuario
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {sortedUsers.map((user, index) => {
-                // Calcular si hay empate en puntos
-                const currentPoints = getTotalPoints(user)
-                const previousPoints = index > 0 ? getTotalPoints(sortedUsers[index - 1]) : null
-                const nextPoints = index < sortedUsers.length - 1 ? getTotalPoints(sortedUsers[index + 1]) : null
-                const hasTie = previousPoints === currentPoints || nextPoints === currentPoints
-
-                // Obtener el estilo basado en los puntos
-                const pointsStyle = getPointsStyle(currentPoints)
-
-                return (
-                  <div
-                    key={user.id}
-                    className={`mobile-card rounded-xl p-4 border ${
-                      pointsStyle
-                        ? pointsStyle.background
-                        : index === 0 && !hasTie
-                          ? "glass-light border-white/15"
-                          : index === 1 && !hasTie
-                            ? "glass border-white/12"
-                            : index === 2 && !hasTie
-                              ? "glass border-white/10"
-                              : "glass-dark border-white/6"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-3 mb-2">
-                          <div
-                            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                              pointsStyle
-                                ? pointsStyle.position
-                                : index === 0 && !hasTie
-                                  ? "bg-yellow-500 text-black"
-                                  : index === 1 && !hasTie
-                                    ? "bg-gray-400 text-black"
-                                    : index === 2 && !hasTie
-                                      ? "bg-amber-600 text-black"
-                                      : "bg-gray-600 text-white"
-                            }`}
-                          >
-                            {index + 1}
-                          </div>
-                          <h3
-                            className={`text-base font-medium truncate ${
-                              getTotalPoints(user) === 0
-                                ? "text-gray-400"
-                                : pointsStyle
-                                  ? pointsStyle.name
-                                  : "text-white"
-                            }`}
-                          >
-                            {user.name}
-                          </h3>
-                          <div
-                            className={`px-2 py-1 rounded-full text-xs font-medium border ml-auto ${
-                              pointsStyle ? pointsStyle.pointsBadge : "bg-blue-600 text-white border-blue-500/20"
-                            }`}
-                          >
-                            {getTotalPoints(user)}
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-3 text-xs mb-2">
-                          <div className="flex items-center gap-1">
-                            <Trophy className="w-3 h-3 text-yellow-500" />
-                            <span className="text-white/70">{user.trophies}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Medal className="w-3 h-3 text-yellow-400" />
-                            <span className="text-white/70">{user.gold_medals}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Medal className="w-3 h-3 text-gray-400" />
-                            <span className="text-white/70">{user.silver_medals}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Medal className="w-3 h-3 text-amber-600" />
-                            <span className="text-white/70">{user.bronze_medals}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-blue-400" />
-                            <span className="text-white/70">{getHoraMedia(user)}</span>
-                          </div>
-                        </div>
-
-                        {user.name.toLowerCase().includes("dídac") && (
-                          <div className="mt-2 p-2 bg-green-500/20 border border-green-400/40 rounded-lg">
-                            <p className="text-green-300 text-xs font-medium">
-                              🚨 Dídac ha recibido un premio de 50 puntos por haber vulnerado la seguridad de la web
-                            </p>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex items-center space-x-2 ml-3">
-                        <button
-                          onClick={openWhatsApp}
-                          className="whatsapp-button text-green-400 hover:text-green-300 hover:bg-green-400/10 border border-green-400/20 hover:border-green-400/40"
-                        >
-                          <MessageCircle className="w-4 h-4" />
-                        </button>
-
-                        {isAuthenticated && (
-                          <>
-                            <button
-                              onClick={() => handleEditUser(user)}
-                              className="touch-button text-white/50 hover:text-white/70 hover:bg-white/5 p-2 rounded transition-all duration-150 border border-white/8 hover:border-white/15"
-                              disabled={isPending}
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteUser(user.id)}
-                              className="touch-button text-white/50 hover:text-white/70 hover:bg-white/5 p-2 rounded transition-all duration-150 border border-white/8 hover:border-white/15"
-                              disabled={isPending}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    )
   }
-
-  const renderScoringSystem = () => (
-    <div className="glass rounded-xl p-4 mb-6">
-      <h4 className="text-lg font-light text-white mb-3 text-center">Sistema de Puntuación</h4>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="text-center p-3 rounded-lg glass-dark border border-white/5">
-          <Trophy className="w-5 h-5 text-yellow-500 mx-auto mb-2" />
-          <div className="text-white text-sm font-medium">Copa</div>
-          <div className="text-white/50 text-xs">{POINTS_SYSTEM.COPA} pts</div>
-        </div>
-        <div className="text-center p-3 rounded-lg glass-dark border border-white/5">
-          <Medal className="w-5 h-5 text-yellow-400 mx-auto mb-2" />
-          <div className="text-white text-sm font-medium">Oro</div>
-          <div className="text-white/50 text-xs">{POINTS_SYSTEM.ORO} pts</div>
-        </div>
-        <div className="text-center p-3 rounded-lg glass-dark border border-white/5">
-          <Medal className="w-5 h-5 text-gray-400 mx-auto mb-2" />
-          <div className="text-white text-sm font-medium">Plata</div>
-          <div className="text-white/50 text-xs">{POINTS_SYSTEM.PLATA} pt</div>
-        </div>
-        <div className="text-center p-3 rounded-lg glass-dark border border-white/5">
-          <Medal className="w-5 h-5 text-amber-600 mx-auto mb-2" />
-          <div className="text-white text-sm font-medium">Bronce</div>
-          <div className="text-white/50 text-xs">{POINTS_SYSTEM.BRONCE} pts</div>
-        </div>
-      </div>
-    </div>
-  )
-
-  const renderRules = () => (
-    <div className="glass rounded-xl p-4 mb-6 border-l-4 border-yellow-500">
-      <div className="text-center">
-        <p className="text-white/80 text-sm mb-2">
-          <span className="text-lg mr-1">⚠️</span>
-          <strong className="text-white">Regla:</strong> Solo cuenta si has dormido. Pedro decide el premio.
-        </p>
-        <p className="text-green-400 text-xs">🎁 Premio oculto de 50 puntos en la web</p>
-      </div>
-    </div>
-  )
-
-  const renderBettingSection = () => (
-    <div className="space-y-6">
-      <div className="text-center">
-        <h2 className="text-2xl font-light mb-3 fire-text">APUESTAS ABIERTAS</h2>
-        <div className="glass rounded-xl p-4">
-          <p className="text-white/90 text-sm mb-4 leading-relaxed font-light">
-            Apuesta por el ganador del día siguiente para obtener puntos adicionales.
-          </p>
-          <div className="grid md:grid-cols-2 gap-3 text-xs mb-4">
-            <div className="glass-light rounded-lg p-3 border border-white/8">
-              <div className="text-white/80 font-medium mb-1">✅ Acierto</div>
-              <div className="text-white/60">+3 puntos</div>
-            </div>
-            <div className="glass-light rounded-lg p-3 border border-white/8">
-              <div className="text-white/80 font-medium mb-1">❌ Error</div>
-              <div className="text-white/60">-1 punto</div>
-            </div>
-          </div>
-          <div className="p-3 glass-dark rounded-lg border border-white/8">
-            <div className="text-white/80 font-medium mb-1 text-xs">🎯 Auto-predicción</div>
-            <div className="text-white/60 text-xs">Ganar: +6 pts | Perder: -6 pts</div>
-          </div>
-        </div>
-      </div>
-
-      {!isMobile && (
-        <div className="text-center">
-          <button
-            onClick={() => setIsBetOpen(true)}
-            className="accent-primary hover:bg-white/8 text-white px-6 py-3 rounded-lg text-sm font-medium touch-button border border-white/15 hover:border-white/25"
-            disabled={isPending}
-          >
-            🔥 Apostar
-          </button>
-        </div>
-      )}
-
-      {isAuthenticated && !isMobile && (
-        <div className="text-center">
-          <button
-            onClick={() => setIsManageBetsOpen(true)}
-            className="accent-info text-white px-4 py-2 rounded-lg touch-button text-sm font-medium border border-white/8 hover:border-white/15"
-            disabled={isPending}
-          >
-            🎯 Gestionar
-          </button>
-        </div>
-      )}
-
-      {bets.length > 0 && (
-        <div className="glass rounded-xl p-4">
-          <h3 className="text-lg font-light text-white mb-3 text-center">Apuestas Activas</h3>
-          <div className="space-y-2">
-            {bets.map((bet) => (
-              <div
-                key={bet.id}
-                className={`rounded-lg p-3 border text-sm mobile-card ${
-                  bet.status === "won"
-                    ? "bg-blue-900/30 border-blue-400/40"
-                    : bet.status === "lost"
-                      ? "glass-dark border-white/8"
-                      : "glass border-white/10"
-                }`}
-              >
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <span className="text-white font-medium truncate">{bet.bettor_name}</span>
-                    <span className="text-white/30">→</span>
-                    <span className="text-white/70 truncate">{bet.predicted_winner}</span>
-                    {bet.status !== "pending" && (
-                      <span
-                        className={`px-2 py-0.5 rounded text-xs font-medium border ml-auto ${
-                          bet.status === "won"
-                            ? "bg-blue-600/40 border-blue-400/60 text-blue-200"
-                            : "glass-dark border-white/8 text-white/60"
-                        }`}
-                      >
-                        {bet.status === "won" ? `+${bet.points_awarded}` : bet.points_awarded}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-white/30 text-xs ml-2">
-                    {new Date(bet.created_at).toLocaleDateString("es-ES")}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-
-  const renderRivalsSection = () => (
-    <div className="mt-12 space-y-6">
-      <div className="w-full h-px bg-gradient-to-r from-transparent via-red-400/30 to-transparent mb-8"></div>
-      <div className="text-center">
-        <h2 className="text-2xl font-light mb-3 fire-text">NUEVA SECCIÓN RIVALS QQ</h2>
-        <div className="glass rounded-xl p-4">
-          <p className="text-white/90 text-sm mb-4 leading-relaxed font-light">
-            Apuesta contra quien crees que NO ganará la copa o medalla de oro.
-          </p>
-          <div className="grid md:grid-cols-2 gap-3 text-xs mb-4">
-            <div className="glass-light rounded-lg p-3 border border-green-400/20 bg-green-500/10">
-              <div className="text-green-300 font-medium mb-1">✅ Acierto</div>
-              <div className="text-green-200">+10 puntos</div>
-            </div>
-            <div className="glass-light rounded-lg p-3 border border-red-400/20 bg-red-500/10">
-              <div className="text-red-300 font-medium mb-1">❌ Error</div>
-              <div className="text-red-200">-3 puntos o vuelves a 0</div>
-            </div>
-          </div>
-          <div className="p-3 glass-dark rounded-lg border border-yellow-400/20 bg-yellow-500/10">
-            <div className="text-yellow-300 font-medium mb-1 text-xs">⚠️ Restricción</div>
-            <div className="text-yellow-200 text-xs">Solo contra usuarios con puntos activos</div>
-          </div>
-        </div>
-      </div>
-
-      {!isMobile && (
-        <div className="flex justify-center gap-3">
-          <button
-            onClick={() => setIsRivalsHowItWorksOpen(true)}
-            className="glass-light rounded-lg px-4 py-2 text-sm text-white/90 hover:bg-white/8 transition-all duration-200 touch-button border border-white/10 hover:border-white/20"
-          >
-            ¿Cómo funciona?
-          </button>
-          <button
-            onClick={() => setIsRivalsOpen(true)}
-            className="accent-danger hover:bg-red-500/20 text-white px-6 py-3 rounded-lg text-sm font-medium touch-button border border-red-400/30 hover:border-red-400/50"
-            disabled={isPending}
-          >
-            🔥 RIVALS
-          </button>
-        </div>
-      )}
-
-      {isAuthenticated && !isMobile && (
-        <div className="text-center">
-          <button
-            onClick={() => setIsManageRivalsOpen(true)}
-            className="accent-danger text-white px-4 py-2 rounded-lg touch-button text-sm font-medium border border-red-400/20 hover:border-red-400/40"
-            disabled={isPending}
-          >
-            🎯 Gestionar RIVALS
-          </button>
-        </div>
-      )}
-
-      {bets.filter((bet) => bet.predicted_winner.startsWith("RIVALS:")).length > 0 && (
-        <div className="glass rounded-xl p-4 border border-red-400/20">
-          <h3 className="text-lg font-light text-white mb-3 text-center">RIVALS Activos</h3>
-          <div className="space-y-2">
-            {bets
-              .filter((bet) => bet.predicted_winner.startsWith("RIVALS:"))
-              .map((bet) => (
-                <div
-                  key={bet.id}
-                  className={`rounded-lg p-3 border text-sm mobile-card ${
-                    bet.status === "won"
-                      ? "bg-green-900/30 border-green-400/40"
-                      : bet.status === "lost"
-                        ? "bg-red-900/30 border-red-400/40"
-                        : "glass border-red-400/20"
-                  }`}
-                >
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <span className="text-white font-medium truncate">{bet.bettor_name}</span>
-                      <span className="text-red-400 font-bold">VS</span>
-                      <span className="text-white/70 truncate">{bet.predicted_winner.replace("RIVALS: ", "")}</span>
-                      {bet.status !== "pending" && (
-                        <span
-                          className={`px-2 py-0.5 rounded text-xs font-medium border ml-auto ${
-                            bet.status === "won"
-                              ? "bg-green-600/40 border-green-400/60 text-green-200"
-                              : "bg-red-600/40 border-red-400/60 text-red-200"
-                          }`}
-                        >
-                          {bet.status === "won" ? `+${bet.points_awarded}` : bet.points_awarded}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-white/30 text-xs ml-2">
-                      {new Date(bet.created_at).toLocaleDateString("es-ES")}
-                    </div>
-                  </div>
-                </div>
-              ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-
-  const renderHiddenPrize = () => (
-    <div className="mt-8 text-center">
-      <p className="text-green-400 text-sm font-medium bg-green-400/10 border border-green-400/20 rounded-lg px-4 py-3">
-        🎁 En esta web se oculta una manera donde puedes ganar 50 puntos directamente, así que los ojos abiertos. Pedir
-        una pista te cuesta 1 punto.
-      </p>
-    </div>
-  )
-
-  const renderTransparencyNotice = () => (
-    <div className="mt-8 glass rounded-xl p-4 border border-green-400/30 bg-green-500/10">
-      <div className="text-center">
-        <h4 className="text-green-300 font-medium mb-3 flex items-center justify-center gap-2">
-          <span className="text-lg">🔍</span>
-          TRANSPARENCIA
-        </h4>
-        <p className="text-green-200 text-sm leading-relaxed mb-4">
-          Esta página no guarda ningún tipo de registro, puedes usar tus extensiones para rastrear, NO guarda IPS, no
-          guarda absolutamente nada que no esté puesto por el juego. Para poder ver el código y hacer vuestras propias
-          comprobaciones (psst... o usarlo para encontrar los premios 50p) Todo está en{" "}
-          <a
-            href="https://github.com/MikeBlacKdevel/QQSweetDreams"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-green-300 hover:text-green-100 underline font-medium"
-          >
-            https://github.com/MikeBlacKdevel/QQSweetDreams
-          </a>
-        </p>
-        <div className="w-8 h-px bg-green-400/30 mx-auto mb-3"></div>
-        <p className="text-green-300 text-sm font-medium">
-          El premio a final de temporada va a ser otorgado por Pedro Llanes o colaboradores, pero será interesante.
-        </p>
-      </div>
-    </div>
-  )
-
-  const renderMobileModal = (isOpen: boolean, onClose: () => void, title: string, children: React.ReactNode) => (
-    <div className={`bottom-sheet ${isOpen ? "open" : ""}`}>
-      <div className="bottom-sheet-handle"></div>
-      <div className="px-4 pb-4 safe-bottom">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-medium text-white">{title}</h3>
-          <button onClick={onClose} className="touch-button p-2 rounded-lg glass-light">
-            <X className="w-5 h-5 text-white" />
-          </button>
-        </div>
-        <div className="custom-scroll">{children}</div>
-      </div>
-    </div>
-  )
-
-  const renderDesktopModal = (
-    isOpen: boolean,
-    onClose: () => void,
-    title: string,
-    children: React.ReactNode,
-    maxWidth = "max-w-md",
-  ) =>
-    isOpen && (
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div
-          className={`glass-dark rounded-xl p-6 ${maxWidth} w-full border border-white/8 mobile-modal custom-scroll`}
-        >
-          <h3 className="text-white text-lg font-light mb-4 text-center">{title}</h3>
-          {children}
-        </div>
-      </div>
-    )
-
-  const renderModal = (
-    isOpen: boolean,
-    onClose: () => void,
-    title: string,
-    children: React.ReactNode,
-    maxWidth = "max-w-md",
-  ) => {
-    if (isMobile) {
-      return renderMobileModal(isOpen, onClose, title, children)
-    }
-    return renderDesktopModal(isOpen, onClose, title, children, maxWidth)
-  }
-
-  const renderFloatingActionButtons = () =>
-    isMobile && (
-      <div className="fixed bottom-4 right-4 flex flex-col gap-3 z-40">
-        <button
-          onClick={() => setIsBetOpen(true)}
-          className="fab accent-primary"
-          disabled={isPending}
-          aria-label="Apostar"
-        >
-          <span className="text-lg">🔥</span>
-        </button>
-        <button
-          onClick={() => setIsRivalsOpen(true)}
-          className="fab accent-danger"
-          disabled={isPending}
-          aria-label="RIVALS"
-        >
-          <span className="text-lg">⚔️</span>
-        </button>
-      </div>
-    )
 
   // ============================================================================
   // RENDER PRINCIPAL
   // ============================================================================
-
   return (
-    <div className="min-h-screen min-h-dvh bg-gradient-to-br from-blue-900/20 via-black to-gray-900 relative">
-      {/* Elementos de fondo decorativos */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-48 h-48 bg-white/[0.01] rounded-full blur-2xl"></div>
-        <div className="absolute bottom-0 right-1/4 w-48 h-48 bg-white/[0.01] rounded-full blur-2xl"></div>
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
+      {/* Reduced animated particles background */}
+      <div className="particles-container">
+        {Array.from({ length: 4 }, (_, i) => (
+          <div key={i} className="particle" />
+        ))}
       </div>
 
-      {/* Header móvil o desktop */}
-      {isMobile ? renderMobileHeader() : null}
+      <div className="flex h-screen overflow-hidden">
+        {/* Sidebar */}
+        <Sidebar
+          isOpen={isSidebarOpen}
+          activeSection={activeSection}
+          isAuthenticated={isAuthenticated}
+          onClose={() => setIsSidebarOpen(false)}
+          onSectionChange={handleSectionChange}
+          onModalOpen={handleModalOpen}
+        />
 
-      {/* Menú móvil */}
-      {renderMobileMenu()}
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <Header
+            isDarkMode={isDarkMode}
+            isAuthenticated={isAuthenticated}
+            isPending={isPending}
+            onToggleTheme={toggleTheme}
+            onToggleSidebar={() => setIsSidebarOpen(true)}
+            onAuthClick={handleAuthClick}
+          />
 
-      <main className={`relative z-10 ${isMobile ? "safe-left safe-right safe-bottom" : "max-w-5xl mx-auto"} p-4`}>
-        {/* Header desktop */}
-        {!isMobile && renderDesktopHeader()}
+          <main className="flex-1 overflow-y-auto">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 relative z-10">
+              {renderContent()}
 
-        {/* Controles de administración desktop */}
-        {renderAdminControls()}
+              {/* Premio oculto */}
+              <div className="mt-8 sm:mt-12 text-center">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <p className="text-sm text-green-800">
+                    🎁 En esta web se oculta una manera donde puedes ganar 50 puntos directamente, así que los ojos
+                    abiertos. Pedir una pista te cuesta 1 punto.
+                  </p>
+                </div>
+              </div>
 
-        {/* Secciones principales */}
-        {renderLeaderboard()}
-        {renderScoringSystem()}
-        {renderRules()}
-        {renderBettingSection()}
-        {renderRivalsSection()}
-        {renderHiddenPrize()}
-        {renderTransparencyNotice()}
-      </main>
+              {/* Aviso de transparencia */}
+              <div className="mt-6 sm:mt-8 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 sm:p-6 card-glow">
+                <div className="text-center">
+                  <h4 className="text-base sm:text-lg font-semibold text-green-800 dark:text-green-400 mb-4 flex items-center justify-center gap-2">
+                    <span className="text-lg">🔍</span>
+                    TRANSPARENCIA
+                  </h4>
+                  <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 leading-relaxed mb-4">
+                    Esta página no guarda ningún tipo de registro, puedes usar tus extensiones para rastrear, NO guarda
+                    IPS, no guarda absolutamente nada que no esté puesto por el juego. Para poder ver el código y hacer
+                    vuestras propias comprobaciones (psst... o usarlo para encontrar los premios 50p) Todo está en{" "}
+                    <a
+                      href="https://github.com/MikeBlacKdevel/QQSweetDreams"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-green-600 dark:text-green-300 hover:text-green-800 dark:hover:text-green-400 underline font-medium"
+                    >
+                      https://github.com/MikeBlacKdevel/QQSweetDreams
+                    </a>
+                  </p>
+                  <div className="w-12 h-px bg-green-300 dark:bg-green-700 mx-auto mb-4"></div>
+                  <p className="text-sm sm:text-base text-gray-800 dark:text-gray-200 font-medium">
+                    El premio a final de temporada va a ser otorgado por Pedro Llanes o colaboradores, pero será
+                    interesante.
+                  </p>
+                  <div className="mt-4 text-xs text-blue-600 dark:text-blue-400 font-mono">
+                    💡 Optimizado para máximo rendimiento - Carga rápida garantizada
+                  </div>
+                </div>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
 
-      {/* Botones flotantes móviles */}
-      {renderFloatingActionButtons()}
-
-      {/* ========================================================================
-          MODALES
-          ======================================================================== */}
-
-      {/* Modal de autenticación */}
-      {renderModal(
-        isAuthOpen,
-        () => setIsAuthOpen(false),
-        "Autenticación",
+      {/* Modales - Solo los críticos cargados inmediatamente */}
+      <Modal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} title="Autenticación">
         <div className="space-y-4">
           <div>
-            <label className="text-white/70 block mb-2 text-sm font-medium">Contraseña</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Contraseña</label>
             <input
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mobile-input px-3 py-3 w-full"
-              onKeyDown={(e) => e.key === "Enter" && handleAuth()}
+              onChange={(e) => setPassword((e.target as HTMLInputElement).value)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              onKeyDown={(e) => e.key === "Enter" && handleAuthSubmit()}
               disabled={isPending}
               placeholder="Contraseña"
             />
           </div>
           <div className="flex gap-3">
             <button
-              onClick={handleAuth}
-              className="accent-primary text-white px-4 py-3 rounded-lg font-medium touch-button flex-1 text-sm"
+              onClick={handleAuthSubmit}
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
               disabled={isPending}
             >
               Entrar
@@ -1327,632 +469,618 @@ export default function MarcadorClient({ initialUsers, initialBets }: Props) {
                 setIsAuthOpen(false)
                 setPassword("")
               }}
-              className="glass-light text-white px-4 py-3 rounded-lg font-medium touch-button flex-1 text-sm"
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-gray-300 dark:border-gray-700 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
               disabled={isPending}
             >
               Cancelar
             </button>
           </div>
-        </div>,
-      )}
+        </div>
+      </Modal>
 
-      {/* Modal agregar usuario */}
-      {renderModal(
-        isAddUserOpen,
-        () => setIsAddUserOpen(false),
-        "Agregar Usuario",
+      {/* Modal Agregar/Editar Usuario */}
+      <Modal
+        isOpen={modals.addUser}
+        onClose={() => {
+          setEditingUser(null)
+          resetFormData()
+          closeModal("addUser")
+        }}
+        title={editingUser ? "Editar Usuario" : "Agregar Usuario"}
+      >
         <form onSubmit={handleAddUser} className="space-y-4">
           <div>
-            <label className="text-white/70 block mb-2 text-sm font-medium">Nombre</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Nombre</label>
             <input
               type="text"
-              value={userName}
-              onChange={(e) => setUserName(e.target.value)}
-              className="mobile-input px-3 py-3 w-full"
+              value={formData.userName}
+              onChange={(e) => updateFormData({ userName: (e.target as HTMLInputElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
               required
               disabled={isPending}
+              placeholder="Nombre del usuario"
             />
           </div>
           <div>
-            <label className="text-white/70 block mb-2 text-sm font-medium">WhatsApp</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">WhatsApp</label>
             <input
               type="text"
-              value={userWhatsapp}
-              onChange={(e) => setUserWhatsapp(e.target.value)}
-              className="mobile-input px-3 py-3 w-full"
+              value={formData.userWhatsapp}
+              onChange={(e) => updateFormData({ userWhatsapp: (e.target as HTMLInputElement).value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
               required
               disabled={isPending}
+              placeholder="Número de WhatsApp"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-white/70 block mb-2 text-sm font-medium">Copas</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Copas</label>
               <input
                 type="number"
-                value={userTrophies}
-                onChange={(e) => setUserTrophies(Number.parseInt(e.target.value) || 0)}
-                className="mobile-input px-3 py-3 w-full"
+                value={formData.userTrophies}
+                onChange={(e) => updateFormData({ userTrophies: Number((e.target as HTMLInputElement).value) || 0 })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+                min="0"
                 disabled={isPending}
               />
             </div>
             <div>
-              <label className="text-white/70 block mb-2 text-sm font-medium">Oro</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Oro</label>
               <input
                 type="number"
-                value={userGoldMedals}
-                onChange={(e) => setUserGoldMedals(Number.parseInt(e.target.value) || 0)}
-                className="mobile-input px-3 py-3 w-full"
+                value={formData.userGoldMedals}
+                onChange={(e) => updateFormData({ userGoldMedals: Number((e.target as HTMLInputElement).value) || 0 })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+                min="0"
+                disabled={isPending}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Plata</label>
+              <input
+                type="number"
+                value={formData.userSilverMedals}
+                onChange={(e) =>
+                  updateFormData({ userSilverMedals: Number((e.target as HTMLInputElement).value) || 0 })
+                }
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+                min="0"
                 disabled={isPending}
               />
             </div>
             <div>
-              <label className="text-white/70 block mb-2 text-sm font-medium">Plata</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Bronce</label>
               <input
                 type="number"
-                value={userSilverMedals}
-                onChange={(e) => setUserSilverMedals(Number.parseInt(e.target.value) || 0)}
-                className="mobile-input px-3 py-3 w-full"
-                disabled={isPending}
-              />
-            </div>
-            <div>
-              <label className="text-white/70 block mb-2 text-sm font-medium">Bronce</label>
-              <input
-                type="number"
-                value={userBronzeMedals}
-                onChange={(e) => setUserBronzeMedals(Number.parseInt(e.target.value) || 0)}
-                className="mobile-input px-3 py-3 w-full"
+                value={formData.userBronzeMedals}
+                onChange={(e) =>
+                  updateFormData({ userBronzeMedals: Number((e.target as HTMLInputElement).value) || 0 })
+                }
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+                min="0"
                 disabled={isPending}
               />
             </div>
           </div>
           <div>
-            <label className="text-white/70 block mb-2 text-sm font-medium">Puntos Extra</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Puntos Extra</label>
             <input
               type="number"
-              value={userPoints}
-              onChange={(e) => setUserPoints(Number.parseInt(e.target.value) || 0)}
-              className="mobile-input px-3 py-3 w-full"
+              value={formData.userPoints}
+              onChange={(e) => updateFormData({ userPoints: Number((e.target as HTMLInputElement).value) || 0 })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 input-glow"
+              min="0"
               disabled={isPending}
             />
           </div>
-          <div className="flex gap-3 pt-2">
+          <div className="flex gap-3 pt-4">
             <button
               type="submit"
-              className="accent-success text-white px-4 py-3 rounded-lg font-medium touch-button flex-1 text-sm"
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 btn-glow"
               disabled={isPending}
             >
-              Guardar
+              {editingUser ? "Actualizar" : "Agregar"}
             </button>
             <button
               type="button"
               onClick={() => {
-                setIsAddUserOpen(false)
-                resetUserForm()
+                setEditingUser(null)
+                resetFormData()
+                closeModal("addUser")
               }}
-              className="glass-light text-white px-4 py-3 rounded-lg font-medium touch-button flex-1 text-sm"
+              className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-gray-300 dark:border-gray-700 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
               disabled={isPending}
             >
               Cancelar
             </button>
           </div>
-        </form>,
-        "max-w-lg",
-      )}
-
-      {/* Modal editar usuario */}
-      {editingUser &&
-        renderModal(
-          !!editingUser,
-          () => setEditingUser(null),
-          "Editar Usuario",
-          <form onSubmit={handleUpdateUser} className="space-y-4">
-            <div>
-              <label className="text-white/70 block mb-2 text-sm font-medium">Nombre</label>
-              <input
-                type="text"
-                value={userName}
-                onChange={(e) => setUserName(e.target.value)}
-                className="mobile-input px-3 py-3 w-full"
-                required
-                disabled={isPending}
-              />
-            </div>
-            <div>
-              <label className="text-white/70 block mb-2 text-sm font-medium">WhatsApp</label>
-              <input
-                type="text"
-                value={userWhatsapp}
-                onChange={(e) => setUserWhatsapp(e.target.value)}
-                className="mobile-input px-3 py-3 w-full"
-                required
-                disabled={isPending}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-white/70 block mb-2 text-sm font-medium">Copas</label>
-                <input
-                  type="number"
-                  value={userTrophies}
-                  onChange={(e) => setUserTrophies(Number.parseInt(e.target.value) || 0)}
-                  className="mobile-input px-3 py-3 w-full"
-                  disabled={isPending}
-                />
-              </div>
-              <div>
-                <label className="text-white/70 block mb-2 text-sm font-medium">Oro</label>
-                <input
-                  type="number"
-                  value={userGoldMedals}
-                  onChange={(e) => setUserGoldMedals(Number.parseInt(e.target.value) || 0)}
-                  className="mobile-input px-3 py-3 w-full"
-                  disabled={isPending}
-                />
-              </div>
-              <div>
-                <label className="text-white/70 block mb-2 text-sm font-medium">Plata</label>
-                <input
-                  type="number"
-                  value={userSilverMedals}
-                  onChange={(e) => setUserSilverMedals(Number.parseInt(e.target.value) || 0)}
-                  className="mobile-input px-3 py-3 w-full"
-                  disabled={isPending}
-                />
-              </div>
-              <div>
-                <label className="text-white/70 block mb-2 text-sm font-medium">Bronce</label>
-                <input
-                  type="number"
-                  value={userBronzeMedals}
-                  onChange={(e) => setUserBronzeMedals(Number.parseInt(e.target.value) || 0)}
-                  className="mobile-input px-3 py-3 w-full"
-                  disabled={isPending}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="text-white/70 block mb-2 text-sm font-medium">Puntos Extra</label>
-              <input
-                type="number"
-                value={userPoints}
-                onChange={(e) => setUserPoints(Number.parseInt(e.target.value) || 0)}
-                className="mobile-input px-3 py-3 w-full"
-                disabled={isPending}
-              />
-            </div>
-            <div className="flex gap-3 pt-2">
-              <button
-                type="submit"
-                className="accent-success text-white px-4 py-3 rounded-lg font-medium touch-button flex-1 text-sm"
-                disabled={isPending}
-              >
-                Actualizar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingUser(null)
-                  resetUserForm()
-                }}
-                className="glass-light text-white px-4 py-3 rounded-lg font-medium touch-button flex-1 text-sm"
-                disabled={isPending}
-              >
-                Cancelar
-              </button>
-            </div>
-          </form>,
-          "max-w-lg",
-        )}
-
-      {/* Modal agregar premio */}
-      {renderModal(
-        isAddCopaOpen,
-        () => setIsAddCopaOpen(false),
-        "Agregar Premio",
-        <form onSubmit={handleAddCopa} className="space-y-4">
-          <div>
-            <label className="text-white/70 block mb-2 text-sm font-medium">Usuario</label>
-            <select
-              value={copaUserId}
-              onChange={(e) => setCopaUserId(e.target.value)}
-              className="mobile-select px-3 py-3 w-full"
-              required
-              disabled={isPending}
-            >
-              <option value="">Selecciona un usuario</option>
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-white/70 block mb-2 text-sm font-medium">Tipo de Premio</label>
-            <select
-              value={copaTipo}
-              onChange={(e) => setCopaTipo(e.target.value)}
-              className="mobile-select px-3 py-3 w-full"
-              required
-              disabled={isPending}
-            >
-              <option value={AWARD_TYPES.COPA}>Copa</option>
-              <option value={AWARD_TYPES.ORO}>Oro</option>
-              <option value={AWARD_TYPES.PLATA}>Plata</option>
-              <option value={AWARD_TYPES.BRONCE}>Bronce</option>
-            </select>
-          </div>
-          <div>
-            <label className="text-white/70 block mb-2 text-sm font-medium">Hora</label>
-            <input
-              type="time"
-              value={copaHora}
-              onChange={(e) => setCopaHora(e.target.value)}
-              className="mobile-input px-3 py-3 w-full"
-              required
-              disabled={isPending}
-            />
-          </div>
-          <div className="flex gap-3 pt-2">
-            <button
-              type="submit"
-              className="accent-warning text-white px-4 py-3 rounded-lg font-medium touch-button flex-1 text-sm"
-              disabled={isPending}
-            >
-              Guardar
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setIsAddCopaOpen(false)
-                resetCopaForm()
-              }}
-              className="glass-light text-white px-4 py-3 rounded-lg font-medium touch-button flex-1 text-sm"
-              disabled={isPending}
-            >
-              Cancelar
-            </button>
-          </div>
-        </form>,
-      )}
-
-      {/* Modal agregar hora */}
-      {renderModal(
-        isAddHoraOpen,
-        () => setIsAddHoraOpen(false),
-        "Agregar Hora",
-        <form onSubmit={handleAddHora} className="space-y-4">
-          <div>
-            <label className="text-white/70 block mb-2 text-sm font-medium">Usuario</label>
-            <select
-              value={horaUserId}
-              onChange={(e) => setHoraUserId(e.target.value)}
-              className="mobile-select px-3 py-3 w-full"
-              required
-              disabled={isPending}
-            >
-              <option value="">Selecciona un usuario</option>
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-white/70 block mb-2 text-sm font-medium">Hora</label>
-            <input
-              type="time"
-              value={horaValue}
-              onChange={(e) => setHoraValue(e.target.value)}
-              className="mobile-input px-3 py-3 w-full"
-              required
-              disabled={isPending}
-            />
-          </div>
-          <div className="flex gap-3 pt-2">
-            <button
-              type="submit"
-              className="accent-info text-white px-4 py-3 rounded-lg font-medium touch-button flex-1 text-sm"
-              disabled={isPending}
-            >
-              Guardar
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setIsAddHoraOpen(false)
-                resetHoraForm()
-              }}
-              className="glass-light text-white px-4 py-3 rounded-lg font-medium touch-button flex-1 text-sm"
-              disabled={isPending}
-            >
-              Cancelar
-            </button>
-          </div>
-        </form>,
-      )}
-
-      {/* Modal apostar */}
-      {renderModal(
-        isBetOpen,
-        () => setIsBetOpen(false),
-        "Apostar",
-        <form onSubmit={handleAddBet} className="space-y-4">
-          <div>
-            <label className="text-white/70 block mb-2 text-sm font-medium">Tu Nombre</label>
-            <input
-              type="text"
-              value={bettorName}
-              onChange={(e) => setBettorName(e.target.value)}
-              className="mobile-input px-3 py-3 w-full"
-              required
-              disabled={isPending}
-              placeholder="¿Quién eres?"
-            />
-          </div>
-          <div>
-            <label className="text-white/70 block mb-2 text-sm font-medium">Ganador Predicho</label>
-            <input
-              type="text"
-              value={predictedWinner}
-              onChange={(e) => setPredictedWinner(e.target.value)}
-              className="mobile-input px-3 py-3 w-full"
-              required
-              disabled={isPending}
-              placeholder="¿Quién ganará?"
-            />
-          </div>
-          <div className="flex gap-3 pt-2">
-            <button
-              type="submit"
-              className="accent-primary text-white px-4 py-3 rounded-lg font-medium touch-button flex-1 text-sm"
-              disabled={isPending}
-            >
-              Apostar
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsBetOpen(false)}
-              className="glass-light text-white px-4 py-3 rounded-lg font-medium touch-button flex-1 text-sm"
-              disabled={isPending}
-            >
-              Cancelar
-            </button>
-          </div>
-        </form>,
-      )}
-
-      {/* Modal RIVALS */}
-      {renderModal(
-        isRivalsOpen,
-        () => setIsRivalsOpen(false),
-        "RIVALS QQ",
-        <form onSubmit={handleAddRivals} className="space-y-4">
-          <div>
-            <label className="text-white/70 block mb-2 text-sm font-medium">Tu Nombre</label>
-            <input
-              type="text"
-              value={rivalsBettorName}
-              onChange={(e) => setRivalsBettorName(e.target.value)}
-              className="mobile-input px-3 py-3 w-full"
-              required
-              disabled={isPending}
-              placeholder="¿Quién eres?"
-            />
-          </div>
-          <div>
-            <label className="text-white/70 block mb-2 text-sm font-medium">Contra Quién Vas</label>
-            <input
-              type="text"
-              value={rivalsTarget}
-              onChange={(e) => setRivalsTarget(e.target.value)}
-              className="mobile-input px-3 py-3 w-full"
-              required
-              disabled={isPending}
-              placeholder="¿Quién NO ganará?"
-            />
-          </div>
-          <div className="bg-red-500/10 border border-red-400/30 rounded-lg p-3">
-            <p className="text-red-300 text-xs text-center">⚠️ Solo puedes apostar contra usuarios con puntos activos</p>
-          </div>
-          <div className="flex gap-3 pt-2">
-            <button
-              type="submit"
-              className="accent-danger text-white px-4 py-3 rounded-lg font-medium touch-button flex-1 text-sm"
-              disabled={isPending}
-            >
-              RIVALS
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsRivalsOpen(false)}
-              className="glass-light text-white px-4 py-3 rounded-lg font-medium touch-button flex-1 text-sm"
-              disabled={isPending}
-            >
-              Cancelar
-            </button>
-          </div>
-        </form>,
-      )}
+        </form>
+      </Modal>
 
       {/* Modal ¿Cómo funciona? */}
-      {renderModal(
-        isHowItWorksOpen,
-        () => setIsHowItWorksOpen(false),
-        "¿Cómo funciona?",
-        <div className="space-y-4">
-          <p className="text-white/70 text-sm">
-            Cada día, se mirará la hora en que se han dado los buenos días y eso será todo. Nadie debe hacer nada más.
-            Bueno si, ¡apostad! son puntos casi seguros.
-          </p>
-          <p className="text-white/70 text-sm">El sistema asigna puntos según los siguientes criterios:</p>
-          <ul className="list-disc list-inside text-white/70 text-sm space-y-1">
-            <li>Copa: {POINTS_SYSTEM.COPA} puntos</li>
-            <li>Oro: {POINTS_SYSTEM.ORO} puntos</li>
-            <li>Plata: {POINTS_SYSTEM.PLATA} punto</li>
-            <li>Bronce: {POINTS_SYSTEM.BRONCE} puntos</li>
-          </ul>
-          <p className="text-white/70 text-sm">
-            Al final de la temporada, el participante con más puntos es coronado como el campeón.
-          </p>
-          <div className="pt-2">
-            <button
-              onClick={() => setIsHowItWorksOpen(false)}
-              className="glass-light text-white px-4 py-3 rounded-lg font-medium touch-button w-full text-sm"
-              disabled={isPending}
-            >
-              Entendido
-            </button>
-          </div>
-        </div>,
-        "max-w-lg",
-      )}
-
-      {/* Modal ¿Cómo funciona RIVALS? */}
-      {renderModal(
-        isRivalsHowItWorksOpen,
-        () => setIsRivalsHowItWorksOpen(false),
-        "RIVALS QQ - ¿Cómo funciona?",
-        <div className="space-y-4">
-          <p className="text-white/90 text-sm leading-relaxed">
-            Bienvenido al modo RIVALS, en esta ocasión debes poner quien crees que NO ganará, ni la copa ni la medalla
-            de oro. Sólo estas dos.
-          </p>
-          <p className="text-white/90 text-sm leading-relaxed">
-            Si aciertas y esa persona NO gana ganas 10 puntos si pierdes se te restarán 3 puntos o volverás a 0.
-          </p>
-          <p className="text-white/90 text-sm leading-relaxed">
-            SÓLO puedes ir en contra de gente que tenga puntos en su cuenta ya, no puede ser alguien inactivo en puntos.
-          </p>
-          <p className="text-red-300 text-sm font-medium text-center">Así que, di quien eres y por quien vas.</p>
-          <div className="pt-2">
-            <button
-              onClick={() => setIsRivalsHowItWorksOpen(false)}
-              className="glass-light text-white px-4 py-3 rounded-lg font-medium touch-button w-full text-sm"
-              disabled={isPending}
-            >
-              Entendido
-            </button>
-          </div>
-        </div>,
-        "max-w-lg",
-      )}
-
-      {/* Modal normas */}
-      {renderModal(
-        isRulesOpen,
-        () => setIsRulesOpen(false),
-        "Normas del Juego",
-        <div className="space-y-4">
-          <div className="space-y-3">
-            <div className="p-3 glass-light rounded-lg border border-white/8">
-              <h4 className="text-white font-medium mb-2 flex items-center gap-2 text-sm">
-                <span className="text-yellow-400">⚠️</span>
-                Norma #1 - Participación Válida
-              </h4>
-              <p className="text-white/80 text-xs leading-relaxed">
-                Debes haber dormido/descansado realmente para participar en los premios al dar los buenos días antes que
-                los demás. Intentar falsear esta norma puede tener penalización.
-              </p>
-            </div>
-
-            <div className="p-3 glass-light rounded-lg border border-white/8">
-              <h4 className="text-white font-medium mb-2 flex items-center gap-2 text-sm">
-                <span className="text-blue-400">🎯</span>
-                Norma #2 - Apuestas y Rivals
-              </h4>
-              <p className="text-white/80 text-xs leading-relaxed">
-                Las apuestas y el modo rivals han de ser claros: tu nombre y el nombre de la otra persona. Si no es así,
-                simplemente se deshará esa apuesta o vs.
-              </p>
-            </div>
-
-            <div className="p-3 glass-light rounded-lg border border-white/8">
-              <h4 className="text-white font-medium mb-2 flex items-center gap-2 text-sm">
-                <span className="text-green-400">🕕</span>
-                Norma #3 - Horario de Buenos Días
-              </h4>
-              <p className="text-white/80 text-xs leading-relaxed">
-                Se tendrán en cuenta los buenos días a partir de las 6:00am. Más temprano no contará, ya ni que sea por
-                salud o posible intento fraudulento.
-              </p>
-            </div>
-
-            <div className="p-3 glass-light rounded-lg border border-white/8">
-              <h4 className="text-white font-medium mb-2 flex items-center gap-2 text-sm">
-                <span className="text-purple-400">🕛</span>
-                Norma #4 - Límite de Apuestas
-              </h4>
-              <p className="text-white/80 text-xs leading-relaxed">
-                Las apuestas o rivals puedes hacerlos hasta las 00:00. De pasarte de la hora será anotada para el día
-                siguiente.
-              </p>
-            </div>
-
-            <div className="p-3 glass-light rounded-lg border border-white/8">
-              <h4 className="text-white font-medium mb-2 flex items-center gap-2 text-sm">
-                <span className="text-red-400">👤</span>
-                Norma #5 - Usuarios No Registrados
-              </h4>
-              <p className="text-white/80 text-xs leading-relaxed">
-                Si un usuario no está en la base de datos, solicita añadirlo.
-              </p>
-            </div>
-
-            <div className="p-3 glass-light rounded-lg border border-red-400/20 bg-red-500/10">
-              <h4 className="text-white font-medium mb-2 flex items-center gap-2 text-sm">
-                <span className="text-red-400">⚔️</span>
-                Norma #6 - RIVALS: Prohibido Auto-Voto
-              </h4>
-              <p className="text-red-300 text-xs leading-relaxed font-medium">
-                En el modo RIVALS NO es válido votarse a sí mismo. No puedes apostar contra ti mismo para obtener puntos
-                fáciles.
-              </p>
+      <Modal isOpen={modals.howItWorks} onClose={() => closeModal("howItWorks")} title="¿Cómo funciona?" maxWidth="2xl">
+        <div className="space-y-6">
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-3">🏆 Sistema de Competición</h3>
+            <p className="text-blue-800 dark:text-blue-200 mb-4">
+              QQ's Sweet Dreams es una competición donde los participantes compiten por conseguir la mejor hora de
+              sueño.
+            </p>
+            <div className="space-y-3">
+              <div className="flex items-start gap-3">
+                <span className="text-yellow-500 text-xl">🏆</span>
+                <div>
+                  <strong className="text-blue-900 dark:text-blue-100">Copa (10 pts):</strong>
+                  <span className="text-blue-800 dark:text-blue-200 ml-2">Mejor hora del día</span>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="text-yellow-400 text-xl">🥇</span>
+                <div>
+                  <strong className="text-blue-900 dark:text-blue-100">Oro (5 pts):</strong>
+                  <span className="text-blue-800 dark:text-blue-200 ml-2">Segunda mejor hora</span>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="text-gray-400 text-xl">🥈</span>
+                <div>
+                  <strong className="text-blue-900 dark:text-blue-100">Plata (3 pts):</strong>
+                  <span className="text-blue-800 dark:text-blue-200 ml-2">Tercera mejor hora</span>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="text-amber-600 text-xl">🥉</span>
+                <div>
+                  <strong className="text-blue-900 dark:text-blue-100">Bronce (1 pt):</strong>
+                  <span className="text-blue-800 dark:text-blue-200 ml-2">Cuarta mejor hora</span>
+                </div>
+              </div>
             </div>
           </div>
-          <div className="pt-2">
-            <button
-              onClick={() => setIsRulesOpen(false)}
-              className="glass-light text-white px-4 py-3 rounded-lg font-medium touch-button w-full text-sm"
-              disabled={isPending}
-            >
-              Entendido
-            </button>
-          </div>
-        </div>,
-        "max-w-2xl",
-      )}
 
-      {/* Overlay para modales móviles */}
-      {isMobile &&
-        (isAuthOpen ||
-          isAddUserOpen ||
-          isAddCopaOpen ||
-          isAddHoraOpen ||
-          editingUser ||
-          isBetOpen ||
-          isRivalsOpen ||
-          isHowItWorksOpen ||
-          isRivalsHowItWorksOpen ||
-          isRulesOpen) && (
-          <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
-            onClick={() => {
-              setIsAuthOpen(false)
-              setIsAddUserOpen(false)
-              setIsAddCopaOpen(false)
-              setIsAddHoraOpen(false)
-              setEditingUser(null)
-              setIsBetOpen(false)
-              setIsRivalsOpen(false)
-              setIsHowItWorksOpen(false)
-              setIsRivalsHowItWorksOpen(false)
-              setIsRulesOpen(false)
-            }}
-          />
-        )}
+          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-green-900 dark:text-green-100 mb-3">🎯 Apuestas</h3>
+            <div className="space-y-3">
+              <div>
+                <strong className="text-green-900 dark:text-green-100">Apuestas normales:</strong>
+                <ul className="list-disc list-inside text-green-800 dark:text-green-200 ml-4 mt-1">
+                  <li>Acierto: +10 puntos</li>
+                  <li>Error: -5 puntos</li>
+                  <li>Auto-predicción (ganar): +20 puntos</li>
+                  <li>Auto-predicción (perder): -10 puntos</li>
+                </ul>
+              </div>
+              <div>
+                <strong className="text-green-900 dark:text-green-100">RIVALS:</strong>
+                <ul className="list-disc list-inside text-green-800 dark:text-green-200 ml-4 mt-1">
+                  <li>Apuesta contra quien NO ganará</li>
+                  <li>Solo contra usuarios con puntos activos</li>
+                  <li>Mismas reglas de puntuación</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-purple-900 dark:text-purple-100 mb-3">💝 Premios Especiales</h3>
+            <div className="space-y-2">
+              <div>
+                <strong className="text-purple-900 dark:text-purple-100">QQ Mejor:</strong>
+                <span className="text-purple-800 dark:text-purple-200 ml-2">
+                  Premios por buenas acciones que fortalezcan la comunidad
+                </span>
+              </div>
+              <div>
+                <strong className="text-purple-900 dark:text-purple-100">Premio Oculto:</strong>
+                <span className="text-purple-800 dark:text-purple-200 ml-2">50 puntos escondidos en la web</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Normas */}
+      <Modal isOpen={modals.rules} onClose={() => closeModal("rules")} title="Normas de la Competición" maxWidth="2xl">
+        <div className="space-y-6">
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-3">⚠️ Regla Principal</h3>
+            <p className="text-red-800 dark:text-red-200 text-center font-medium">
+              <strong>Solo cuenta si has dormido. Pedro decide el premio.</strong>
+            </p>
+          </div>
+
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-yellow-900 dark:text-yellow-100 mb-3">📋 Normas Generales</h3>
+            <ul className="space-y-2 text-yellow-800 dark:text-yellow-200">
+              <li className="flex items-start gap-2">
+                <span className="text-yellow-600">•</span>
+                <span>Las horas deben ser reales y verificables</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-yellow-600">•</span>
+                <span>No se permiten horas falsas o manipuladas</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-yellow-600">•</span>
+                <span>Los administradores pueden verificar las horas en cualquier momento</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-yellow-600">•</span>
+                <span>Las decisiones de los administradores son finales</span>
+              </li>
+            </ul>
+          </div>
+
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-3">🎯 Normas de Apuestas</h3>
+            <ul className="space-y-2 text-blue-800 dark:text-blue-200">
+              <li className="flex items-start gap-2">
+                <span className="text-blue-600">•</span>
+                <span>Las apuestas deben realizarse antes de las 23:59 del día anterior</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-blue-600">•</span>
+                <span>No se pueden cambiar las apuestas una vez realizadas</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-blue-600">•</span>
+                <span>Las auto-predicciones tienen mayor riesgo y recompensa</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-blue-600">•</span>
+                <span>RIVALS solo permite apostar contra usuarios activos</span>
+              </li>
+            </ul>
+          </div>
+
+          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-green-900 dark:text-green-100 mb-3">👮 Administración</h3>
+            <div className="space-y-2 text-green-800 dark:text-green-200">
+              <p>
+                <strong>Administradores autorizados:</strong>
+              </p>
+              <ul className="list-disc list-inside ml-4">
+                <li>Pedro Llanes (Administrador Principal)</li>
+                <li>Vince (Administrador)</li>
+                <li>Otros administradores designados</li>
+              </ul>
+              <p className="mt-3">
+                <strong>Los administradores pueden:</strong>
+              </p>
+              <ul className="list-disc list-inside ml-4">
+                <li>Otorgar premios QQ Mejor</li>
+                <li>Aplicar penalizaciones</li>
+                <li>Verificar horas de sueño</li>
+                <li>Resolver disputas</li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-purple-900 dark:text-purple-100 mb-3">🏆 Premio Final</h3>
+            <p className="text-purple-800 dark:text-purple-200 text-center">
+              El premio al final de la temporada será otorgado por Pedro Llanes o colaboradores, y será interesante.
+            </p>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal QQ Mejor Ejemplos */}
+      <Modal
+        isOpen={modals.qqMejor}
+        onClose={() => closeModal("qqMejor")}
+        title="Ejemplos de Buenas Acciones QQ Mejor"
+        maxWidth="2xl"
+      >
+        <div className="space-y-6">
+          <div className="bg-pink-50 dark:bg-pink-900/20 border border-pink-200 dark:border-pink-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-pink-900 dark:text-pink-100 mb-3 flex items-center gap-2">
+              <span>💝</span> Ayuda y Colaboración
+            </h3>
+            <ul className="space-y-2 text-pink-800 dark:text-pink-200">
+              <li className="flex items-start gap-2">
+                <span className="text-pink-600">•</span>
+                <span>Ayudar a otros miembros con problemas técnicos</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-pink-600">•</span>
+                <span>Compartir recursos útiles para mejorar el sueño</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-pink-600">•</span>
+                <span>Organizar actividades grupales beneficiosas</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-pink-600">•</span>
+                <span>Mediar en conflictos de manera constructiva</span>
+              </li>
+            </ul>
+          </div>
+
+          <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-purple-900 dark:text-purple-100 mb-3 flex items-center gap-2">
+              <span>🌟</span> Participación Activa
+            </h3>
+            <ul className="space-y-2 text-purple-800 dark:text-purple-200">
+              <li className="flex items-start gap-2">
+                <span className="text-purple-600">•</span>
+                <span>Contribuir con ideas para mejorar la competición</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-purple-600">•</span>
+                <span>Animar y motivar a otros participantes</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-purple-600">•</span>
+                <span>Crear contenido divertido relacionado con QQ</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-purple-600">•</span>
+                <span>Mantener un ambiente positivo en el grupo</span>
+              </li>
+            </ul>
+          </div>
+
+          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-green-900 dark:text-green-100 mb-3 flex items-center gap-2">
+              <span>🤝</span> Espíritu Comunitario
+            </h3>
+            <ul className="space-y-2 text-green-800 dark:text-green-200">
+              <li className="flex items-start gap-2">
+                <span className="text-green-600">•</span>
+                <span>Dar la bienvenida a nuevos miembros</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-green-600">•</span>
+                <span>Compartir experiencias y consejos de sueño</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-green-600">•</span>
+                <span>Celebrar los logros de otros participantes</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-green-600">•</span>
+                <span>Reportar problemas de manera constructiva</span>
+              </li>
+            </ul>
+          </div>
+
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-yellow-900 dark:text-yellow-100 mb-3 flex items-center gap-2">
+              <span>🏦</span> Nota Importante
+            </h3>
+            <p className="text-yellow-800 dark:text-yellow-200">
+              Los premios QQ Mejor son determinados por la administración según el impacto positivo de la acción en la
+              comunidad. Los puntos pueden variar entre 5 y 50 según la magnitud y beneficio de la contribución.
+            </p>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Penalizaciones Ejemplos */}
+      <Modal
+        isOpen={modals.penalizations}
+        onClose={() => closeModal("penalizations")}
+        title="Comportamientos Penalizables"
+        maxWidth="2xl"
+      >
+        <div className="space-y-6">
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-3 flex items-center gap-2">
+              <span>🚫</span> Comportamiento Tóxico
+            </h3>
+            <ul className="space-y-2 text-red-800 dark:text-red-200">
+              <li className="flex items-start gap-2">
+                <span className="text-red-600">•</span>
+                <span>Insultos o faltas de respeto hacia otros miembros</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-red-600">•</span>
+                <span>Acoso o intimidación a participantes</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-red-600">•</span>
+                <span>Discriminación por cualquier motivo</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-red-600">•</span>
+                <span>Crear conflictos innecesarios o drama</span>
+              </li>
+            </ul>
+          </div>
+
+          <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-orange-900 dark:text-orange-100 mb-3 flex items-center gap-2">
+              <span>📱</span> Mal Uso del Grupo
+            </h3>
+            <ul className="space-y-2 text-orange-800 dark:text-orange-200">
+              <li className="flex items-start gap-2">
+                <span className="text-orange-600">•</span>
+                <span>Spam o mensajes repetitivos innecesarios</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-orange-600">•</span>
+                <span>Compartir contenido inapropiado o ofensivo</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-orange-600">•</span>
+                <span>Uso excesivo de mayúsculas o emojis</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-orange-600">•</span>
+                <span>Desviar constantemente las conversaciones del tema</span>
+              </li>
+            </ul>
+          </div>
+
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-yellow-900 dark:text-yellow-100 mb-3 flex items-center gap-2">
+              <span>⚖️</span> Trampas y Deshonestidad
+            </h3>
+            <ul className="space-y-2 text-yellow-800 dark:text-yellow-200">
+              <li className="flex items-start gap-2">
+                <span className="text-yellow-600">•</span>
+                <span>Falsificar horas de sueño</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-yellow-600">•</span>
+                <span>Manipular el sistema de puntuación</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-yellow-600">•</span>
+                <span>Crear cuentas falsas o duplicadas</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-yellow-600">•</span>
+                <span>Colusión en las apuestas</span>
+              </li>
+            </ul>
+          </div>
+
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-3 flex items-center gap-2">
+              <span>👮</span> Proceso de Penalización
+            </h3>
+            <div className="space-y-2 text-blue-800 dark:text-blue-200">
+              <p>
+                <strong>Administradores autorizados:</strong>
+              </p>
+              <ul className="list-disc list-inside ml-4">
+                <li>Pedro Llanes</li>
+                <li>Vince</li>
+                <li>Otros administradores designados</li>
+              </ul>
+              <p className="mt-3">
+                <strong>Proceso:</strong>
+              </p>
+              <ol className="list-decimal list-inside ml-4">
+                <li>Evaluación del comportamiento</li>
+                <li>Determinación de la penalización (5-50 puntos)</li>
+                <li>Aplicación con justificación</li>
+                <li>Registro en el historial</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal RIVALS Cómo Funciona */}
+      <Modal
+        isOpen={modals.rivalsHowItWorks}
+        onClose={() => closeModal("rivalsHowItWorks")}
+        title="¿Cómo funciona RIVALS?"
+        maxWidth="2xl"
+      >
+        <div className="space-y-6">
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-3 flex items-center gap-2">
+              <span>⚔️</span> Concepto RIVALS
+            </h3>
+            <p className="text-red-800 dark:text-red-200 mb-4">
+              RIVALS es una modalidad de apuesta donde apuestas <strong>CONTRA</strong> un usuario específico,
+              prediciendo que NO ganará la copa o medalla de oro del día.
+            </p>
+            <div className="bg-red-100 dark:bg-red-800/30 rounded-lg p-3">
+              <p className="text-red-900 dark:text-red-100 font-medium text-center">
+                "Apuesto que [Usuario] NO ganará hoy"
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-orange-900 dark:text-orange-100 mb-3 flex items-center gap-2">
+              <span>📋</span> Reglas RIVALS
+            </h3>
+            <ul className="space-y-2 text-orange-800 dark:text-orange-200">
+              <li className="flex items-start gap-2">
+                <span className="text-orange-600">•</span>
+                <span>Solo puedes apostar contra usuarios que ya tengan puntos activos</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-orange-600">•</span>
+                <span>No puedes apostar contra usuarios con 0 puntos</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-orange-600">•</span>
+                <span>La apuesta se resuelve según si el usuario gana copa/oro o no</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-orange-600">•</span>
+                <span>Mismas reglas de tiempo que las apuestas normales</span>
+              </li>
+            </ul>
+          </div>
+
+          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-green-900 dark:text-green-100 mb-3 flex items-center gap-2">
+              <span>🎯</span> Puntuación RIVALS
+            </h3>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="bg-green-100 dark:bg-green-800/30 rounded-lg p-3">
+                <div className="text-green-900 dark:text-green-100 font-semibold mb-1">✅ Acierto</div>
+                <div className="text-green-800 dark:text-green-200 text-sm">El usuario NO gana copa/oro</div>
+                <div className="text-green-700 dark:text-green-300 font-bold">+10 puntos</div>
+              </div>
+              <div className="bg-red-100 dark:bg-red-800/30 rounded-lg p-3">
+                <div className="text-red-900 dark:text-red-100 font-semibold mb-1">❌ Error</div>
+                <div className="text-red-800 dark:text-red-200 text-sm">El usuario SÍ gana copa/oro</div>
+                <div className="text-red-700 dark:text-red-300 font-bold">-5 puntos</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-3 flex items-center gap-2">
+              <span>💡</span> Estrategia RIVALS
+            </h3>
+            <ul className="space-y-2 text-blue-800 dark:text-blue-200">
+              <li className="flex items-start gap-2">
+                <span className="text-blue-600">•</span>
+                <span>Analiza el historial de horas del usuario objetivo</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-blue-600">•</span>
+                <span>Considera su consistencia en horarios de sueño</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-blue-600">•</span>
+                <span>Evalúa la competencia del día</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-blue-600">•</span>
+                <span>Recuerda: es más fácil que alguien NO gane que sí gane</span>
+              </li>
+            </ul>
+          </div>
+
+          <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-purple-900 dark:text-purple-100 mb-3 flex items-center gap-2">
+              <span>⚠️</span> Consideraciones Importantes
+            </h3>
+            <ul className="space-y-2 text-purple-800 dark:text-purple-200">
+              <li className="flex items-start gap-2">
+                <span className="text-purple-600">•</span>
+                <span>RIVALS puede crear tensión - úsalo con deportividad</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-purple-600">•</span>
+                <span>No tomes las apuestas RIVALS como algo personal</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-purple-600">•</span>
+                <span>Mantén el espíritu competitivo pero amistoso</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-purple-600">•</span>
+                <span>Los administradores pueden intervenir si hay conflictos</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
